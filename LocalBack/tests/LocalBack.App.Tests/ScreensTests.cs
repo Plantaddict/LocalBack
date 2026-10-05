@@ -91,6 +91,7 @@ public class ScreensTests
         service.RefreshAll();
 
         Step("app");
+        App.TestMode = true;
         var app = new App();
         app.InitializeComponent();
         app.UseServiceForTests(service);

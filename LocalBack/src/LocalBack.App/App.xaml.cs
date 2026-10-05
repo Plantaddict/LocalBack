@@ -31,9 +31,13 @@ public partial class App : Application
     /// <summary>Raised on the UI thread (coalesced) when anything about sets or runs changed.</summary>
     public event Action? StatusRefreshed;
 
+    /// <summary>Set by UI tests before constructing the app, so the normal startup (tray, first-run dialog) is skipped.</summary>
+    internal static bool TestMode;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if (TestMode) return;
         _instance = new SingleInstance();
         if (!_instance.TryAcquire())
         {
