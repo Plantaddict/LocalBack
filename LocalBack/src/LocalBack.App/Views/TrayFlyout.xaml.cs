@@ -18,6 +18,7 @@ public partial class TrayFlyout : Window
         Loaded += (_, _) => PlaceNearTray();
         Deactivated += (_, _) => SafeClose();
         KeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Escape) SafeClose(); };
+        Closing += (_, _) => _closing = true;
         Closed += (_, _) => _vm.Dispose();
     }
 

@@ -24,6 +24,19 @@ jobs:
       - name: Open every screen
         if: hashFiles('LocalBack/tests/LocalBack.App.Tests/LocalBack.App.Tests.csproj') != ''
         run: dotnet test tests/LocalBack.App.Tests --configuration Release --logger "console;verbosity=normal"
+      - name: Print small screenshots
+        if: always()
+        shell: pwsh
+        run: |
+          $dir = "tests/LocalBack.App.Tests/bin/Release/net8.0-windows/screenshots/small"
+          if (Test-Path $dir) {
+            Get-ChildItem $dir -Filter *.png | ForEach-Object {
+              $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes($_.FullName))
+              for ($i = 0; $i -lt $b64.Length; $i += 4000) {
+                Write-Output ("LBSHOT " + $_.BaseName + " " + $b64.Substring($i, [Math]::Min(4000, $b64.Length - $i)))
+              }
+            }
+          }
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -199,7 +199,14 @@ public class ScreensTests
         rtb.Render(content);
         var enc = new PngBitmapEncoder();
         enc.Frames.Add(BitmapFrame.Create(rtb));
-        using var fs = File.Create(Path.Combine(Shots, name + ".png"));
-        enc.Save(fs);
+        using (var fs = File.Create(Path.Combine(Shots, name + ".png"))) enc.Save(fs);
+
+        // A small 256-colour copy that CI prints into the log, for reviewing the screen without downloading artifacts.
+        var small = new TransformedBitmap(rtb, new ScaleTransform(0.6, 0.6));
+        var indexed = new FormatConvertedBitmap(small, PixelFormats.Indexed8, BitmapPalettes.Halftone256, 0);
+        var enc2 = new PngBitmapEncoder();
+        enc2.Frames.Add(BitmapFrame.Create(indexed));
+        Directory.CreateDirectory(Path.Combine(Shots, "small"));
+        using (var fs2 = File.Create(Path.Combine(Shots, "small", name + ".png"))) enc2.Save(fs2);
     }
 }
