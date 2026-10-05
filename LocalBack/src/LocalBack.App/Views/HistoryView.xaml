@@ -163,12 +163,12 @@
                                         <c:Icon DockPanel.Dock="Left" Data="{StaticResource IconFile}" Foreground="{StaticResource TextSecondary}"/>
                                         <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
-                                            <TextBlock Text="{Binding Folder}" Style="{StaticResource Secondary}" TextTrimming="CharacterEllipsis"
-                                                       Visibility="{Binding HasFolder, Converter={StaticResource Vis}}"/>
+                                            <TextBlock Text="{Binding Detail}" Style="{StaticResource Secondary}" TextTrimming="CharacterEllipsis"
+                                                       Visibility="{Binding HasDetail, Converter={StaticResource Vis}}"/>
                                         </StackPanel>
                                     </DockPanel>
                                     <TextBlock Grid.Column="1" Text="{Binding Size}" FontSize="13" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="12,0,0,0"/>
-                                    <Border Grid.Column="2" CornerRadius="10" Padding="8,2" Background="{Binding TagBackground}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,0,0,0">
+                                    <Border Grid.Column="2" CornerRadius="10" Padding="8,2" Background="{Binding TagBackground}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,0,0,0" MaxWidth="88">
                                         <TextBlock Text="{Binding Change}" FontSize="12" Foreground="{Binding TagForeground}" TextTrimming="CharacterEllipsis"/>
                                     </Border>
                                     <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right">

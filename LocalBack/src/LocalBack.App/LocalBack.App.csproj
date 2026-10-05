@@ -33,6 +33,7 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Assets\LocalBack.ico" />
-    <EmbeddedResource Include="Localization\Strings.*.json" />
+    <!-- A plain name: "Strings.en.json" would be taken for a culture-specific resource and moved to a satellite assembly. -->
+    <EmbeddedResource Include="Localization\strings-*.json" WithCulture="false" LogicalName="LocalBack.App.Localization.%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

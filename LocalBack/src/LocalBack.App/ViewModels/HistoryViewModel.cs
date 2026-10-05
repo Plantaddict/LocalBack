@@ -474,10 +474,22 @@ public sealed class FileRowViewModel
             return dir;
         }
     }
+    /// <summary>Second line under the name: the folder, and for a deleted file when it was deleted.</summary>
+    public string Detail
+    {
+        get
+        {
+            var folder = Folder;
+            if (_file.DeletedAt is not { } d) return folder;
+            var when = Loc.T("history.deletedAt", Format.When(d));
+            return folder.Length > 0 ? $"{when} · {folder}" : when;
+        }
+    }
+    public bool HasDetail => Detail.Length > 0;
     public bool HasFolder => Folder.Length > 0;
     public string FullPath => _file.Key.FullPath;
     public string Size => Format.Size(_file.Entry.Size);
-    public string Change => _file.DeletedAt is { } d ? Loc.T("history.deletedAt", Format.When(d)) : Loc.T("change." + _file.Change);
+    public string Change => Loc.T("change." + _file.Change);
     public Brush TagBackground => _file.Change switch
     {
         ChangeKind.Added => Ui.Brush("GreenTint"),

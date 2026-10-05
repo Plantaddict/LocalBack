@@ -141,4 +141,4 @@ Commands that write (`add`, `backup`, `restore`, `prune`, `remove`, `watch`) nee
 - **Encryption is chosen when a destination is first used.** A random data key encrypts files and snapshot lists; the password only wraps that key (PBKDF2-SHA256, 600 000 rounds), so changing the password is instant and there is no way to recover a lost one. `set.json` and the snapshot summary list (`snapshots.jsonl`: dates and counts) stay in clear so a destination can be recognised and listed without the password; file names and contents do not.
 - **The key stays on the PC** (`keys.json`, protected with DPAPI for the signed-in user) so live backups run unattended. Another PC asks for the password; "Forget password on this PC" in a set's menu removes the saved key.
 - **Network shares** get no plug-in event, so a share that is away is tried again every few minutes.
-- **UI text lives in `src/LocalBack.App/Localization/Strings.<lang>.json`.** Adding a language is one file plus a line in `Loc.Available`.
+- **UI text lives in `src/LocalBack.App/Localization/strings-<lang>.json`.** Adding a language is one file plus a line in `Loc.Available`.

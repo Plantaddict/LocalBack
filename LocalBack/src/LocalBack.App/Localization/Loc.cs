@@ -10,7 +10,7 @@ using LocalBack.Core.Util;
 namespace LocalBack.App.Localization;
 
 /// <summary>
-/// All UI text, by key, from Localization/Strings.&lt;lang&gt;.json (embedded). Switching language at run time
+/// All UI text, by key, from Localization/strings-&lt;lang&gt;.json (embedded). Switching language at run time
 /// re-reads every binding made with <see cref="TExtension"/>; view models call <see cref="T"/>.
 /// </summary>
 public sealed class Loc : INotifyPropertyChanged
@@ -83,8 +83,12 @@ public sealed class Loc : INotifyPropertyChanged
     private static Dictionary<string, string> Load(string lang)
     {
         var asm = Assembly.GetExecutingAssembly();
-        using var stream = asm.GetManifestResourceStream($"LocalBack.App.Localization.Strings.{lang}.json");
-        if (stream == null) return new();
+        using var stream = asm.GetManifestResourceStream($"LocalBack.App.Localization.strings-{lang}.json");
+        if (stream == null)
+        {
+            Log.Error($"Strings for '{lang}' are missing from the build; resources: {string.Join(", ", asm.GetManifestResourceNames())}");
+            return new();
+        }
         return JsonSerializer.Deserialize<Dictionary<string, string>>(stream) ?? new();
     }
 }
