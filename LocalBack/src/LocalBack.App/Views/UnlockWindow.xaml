@@ -1,0 +1,38 @@
+<v:DialogWindow x:Class="LocalBack.App.Views.UnlockWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:LocalBack.App.Controls"
+        xmlns:l="clr-namespace:LocalBack.App.Localization"
+        xmlns:v="clr-namespace:LocalBack.App.Views"
+        Title="{Binding Title}" Width="456" SizeToContent="Height" Icon="pack://application:,,,/LocalBack;component/Assets/LocalBack.ico" WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="Vis"/>
+    </Window.Resources>
+    <Border Margin="8" CornerRadius="10" Background="{StaticResource Surface}" BorderBrush="{StaticResource BorderStrong}" BorderThickness="1" Padding="24">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="12" ShadowDepth="2" Opacity="0.18"/>
+        </Border.Effect>
+        <DockPanel>
+            <DockPanel DockPanel.Dock="Top">
+                <c:Icon DockPanel.Dock="Left" Data="{StaticResource IconLock}" Width="28" Height="28" Foreground="{StaticResource Accent}" VerticalAlignment="Top"/>
+                <StackPanel Margin="12,0,0,0">
+                    <TextBlock Text="{Binding Title}" Style="{StaticResource H2}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{l:T unlock.text}" FontSize="13" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                </StackPanel>
+            </DockPanel>
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                <Button Style="{StaticResource BtnSecondary}" Content="{l:T btn.cancel}" Command="{Binding Cancel}" IsCancel="True"/>
+                <Button Style="{StaticResource BtnPrimary}" Content="{l:T unlock.button}" Command="{Binding Unlock}" Margin="8,0,0,0" IsDefault="True"/>
+            </StackPanel>
+            <StackPanel Margin="0,16,0,0">
+                <TextBlock Text="{l:T unlock.password}" Style="{StaticResource Label}"/>
+                <PasswordBox x:Name="PasswordBox" Height="34" Padding="8,6" FontSize="14" BorderBrush="{StaticResource BorderStrong}" PasswordChanged="Password_Changed"/>
+                <CheckBox IsChecked="{Binding Remember}" Margin="0,10,0,0">
+                    <TextBlock Text="{l:T unlock.remember}" TextWrapping="Wrap"/>
+                </CheckBox>
+                <TextBlock Text="{Binding Error}" Foreground="{StaticResource Red}" FontSize="13" Margin="0,10,0,0" TextWrapping="Wrap"
+                           Visibility="{Binding HasError, Converter={StaticResource Vis}}"/>
+            </StackPanel>
+        </DockPanel>
+    </Border>
+</v:DialogWindow>

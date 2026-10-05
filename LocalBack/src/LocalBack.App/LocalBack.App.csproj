@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>LocalBack</AssemblyName>
+    <RootNamespace>LocalBack.App</RootNamespace>
+    <ApplicationIcon>Assets\LocalBack.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Both WPF and WinForms are referenced; keep their global usings from colliding. -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <!-- Small, fast-starting single file. WPF does not support trimming, so it stays off. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- No bundle compression: compressed assemblies are unpacked into private memory at start (~100 MB for WPF),
+         uncompressed ones are mapped from the exe. The installer compresses the download anyway. -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+    <!-- DPI awareness is set in app.manifest, which is the right place for a WPF app. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\LocalBack.Core\LocalBack.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="LocalBack.App.Tests" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Assets\LocalBack.ico" />
+    <!-- A plain name: "Strings.en.json" would be taken for a culture-specific resource and moved to a satellite assembly. -->
+    <EmbeddedResource Include="Localization\strings-*.json" WithCulture="false" LogicalName="LocalBack.App.Localization.%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

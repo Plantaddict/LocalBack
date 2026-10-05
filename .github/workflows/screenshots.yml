@@ -1,0 +1,36 @@
+name: screenshots
+
+# Renders every screen on Windows and commits the PNGs to LocalBack/docs/screenshots.
+# Runs only for commits whose message contains [screenshots].
+on:
+  push:
+
+permissions:
+  contents: write
+
+jobs:
+  screenshots:
+    if: contains(github.event.head_commit.message, '[screenshots]')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Render screens
+        working-directory: LocalBack
+        run: dotnet test tests/LocalBack.App.Tests --configuration Release --filter "FullyQualifiedName~ScreensTests"
+      - name: Commit screenshots
+        shell: pwsh
+        run: |
+          $dst = "LocalBack/docs/screenshots"
+          New-Item -ItemType Directory -Force $dst | Out-Null
+          Copy-Item LocalBack/tests/LocalBack.App.Tests/bin/Release/net8.0-windows/screenshots/*.png $dst
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add $dst
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "Update screenshots [skip ci]"
+            git push
+          }

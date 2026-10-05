@@ -1,0 +1,132 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One build per branch at a time; a newer push cancels the older run (they raced on the release step).
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: LocalBack
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Test engine
+        run: dotnet test tests/LocalBack.Core.Tests --configuration Release --logger "console;verbosity=normal"
+      - name: Build app
+        if: hashFiles('LocalBack/src/LocalBack.App/LocalBack.App.csproj') != ''
+        run: dotnet build src/LocalBack.App --configuration Release
+      - name: Open every screen
+        if: hashFiles('LocalBack/tests/LocalBack.App.Tests/LocalBack.App.Tests.csproj') != ''
+        run: dotnet test tests/LocalBack.App.Tests --configuration Release --logger "console;verbosity=normal"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: LocalBack/tests/LocalBack.App.Tests/bin/Release/net8.0-windows/screenshots
+          if-no-files-found: ignore
+      - name: Publish app
+        if: hashFiles('LocalBack/src/LocalBack.App/LocalBack.App.csproj') != ''
+        run: dotnet publish src/LocalBack.App -c Release -r win-x64 --self-contained -o publish/LocalBack
+      - name: Publish CLI
+        run: |
+          dotnet publish src/LocalBack.Cli -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish/cli
+          Copy-Item publish/cli/localback-cli.exe publish/LocalBack/
+      - name: Smoke test the published app
+        shell: pwsh
+        run: |
+          $env:LOCALBACK_HOME = Join-Path $env:RUNNER_TEMP "lbhome"
+          $src = Join-Path $env:RUNNER_TEMP "lbsrc"; $usb = Join-Path $env:RUNNER_TEMP "lbusb"
+          New-Item -ItemType Directory -Force $src, $usb | Out-Null
+          1..300 | ForEach-Object { Set-Content (Join-Path $src "file$_.txt") ("content $_ " * 200) }
+          & ./publish/LocalBack/localback-cli.exe add --name Desktop --drive $usb --folder $src
+          if ($LASTEXITCODE) { throw "CLI add failed" }
+          $app = Start-Process ./publish/LocalBack/LocalBack.exe -ArgumentList '--tray' -PassThru
+          Start-Sleep 30
+          $app.Refresh(); if ($app.HasExited) { throw "App exited with $($app.ExitCode)" }
+          "MEMORY idle in tray: working set {0:N1} MB, private {1:N1} MB" -f ($app.WorkingSet64 / 1MB), ($app.PrivateMemorySize64 / 1MB)
+          Set-Content (Join-Path $src "saved-while-running.txt") "hello"
+          Start-Sleep 12
+          $snaps = & ./publish/LocalBack/localback-cli.exe snapshots Desktop
+          $snaps
+          if (-not ($snaps -match "Live")) { throw "Live change was not backed up" }
+          $second = Start-Process ./publish/LocalBack/LocalBack.exe -ArgumentList '--history', (Join-Path $src "saved-while-running.txt") -PassThru
+          if (-not $second.WaitForExit(15000)) { throw "Second launch did not hand over to the running app" }
+          Start-Sleep 5
+          $app.Refresh(); if ($app.HasExited) { throw "App exited after opening history" }
+          "MEMORY with main window open: working set {0:N1} MB, private {1:N1} MB" -f ($app.WorkingSet64 / 1MB), ($app.PrivateMemorySize64 / 1MB)
+          $app.CloseMainWindow() | Out-Null
+          Start-Sleep 25
+          $app.Refresh(); if ($app.HasExited) { throw "App exited when its window closed" }
+          "MEMORY after closing the window: working set {0:N1} MB, private {1:N1} MB" -f ($app.WorkingSet64 / 1MB), ($app.PrivateMemorySize64 / 1MB)
+          Stop-Process -Id $app.Id -Force
+          Get-Content (Join-Path $env:LOCALBACK_HOME "localback.log") -Tail 20
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc installer/LocalBack.iss /DAppVersion=0.1.0
+          if ($LASTEXITCODE) { throw "ISCC failed" }
+      - name: Install and uninstall silently
+        shell: pwsh
+        run: |
+          $setup = Get-Item publish/LocalBack-Setup-*.exe
+          Start-Process $setup.FullName -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
+          $dir = Join-Path $env:LOCALAPPDATA "Programs\LocalBack"
+          if (-not (Test-Path (Join-Path $dir "LocalBack.exe"))) { throw "Not installed" }
+          if (-not (Test-Path (Join-Path $dir "localback-cli.exe"))) { throw "CLI not installed" }
+          Start-Process (Join-Path $dir "unins000.exe") -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES' -Wait
+          Start-Sleep 3
+          if (Test-Path (Join-Path $dir "LocalBack.exe")) { throw "Not uninstalled" }
+          "Installer OK: {0:N1} MB" -f ($setup.Length / 1MB)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LocalBack-win-x64
+          path: LocalBack/publish/LocalBack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LocalBack-Setup
+          path: LocalBack/publish/LocalBack-Setup-*.exe
+      - name: Publish installer as the "latest" pre-release
+        if: github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $setup = (Get-Item publish/LocalBack-Setup-*.exe).FullName
+          $notes = "Built from " + $env:GITHUB_SHA.Substring(0, 7) + " on branch " + $env:GITHUB_REF_NAME + ". Per-user install, no admin rights needed. Windows 10/11 x64."
+          gh release view latest *> $null
+          if ($LASTEXITCODE) {
+            gh release create latest $setup --prerelease --target $env:GITHUB_SHA --title "LocalBack latest build" --notes $notes
+          } else {
+            gh release upload latest $setup --clobber
+            if ($LASTEXITCODE) { throw "upload failed" }
+            gh release edit latest --notes $notes --prerelease
+          }
+          if ($LASTEXITCODE) { throw "release failed" }
+
+  linux-engine:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: LocalBack
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet test tests/LocalBack.Core.Tests --configuration Release

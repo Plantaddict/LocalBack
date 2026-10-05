@@ -1,0 +1,275 @@
+using System.Windows;
+using System.Windows.Threading;
+using LocalBack.App.Localization;
+using LocalBack.App.Services;
+using LocalBack.App.ViewModels;
+using LocalBack.App.Views;
+using LocalBack.Core.Drives;
+using LocalBack.Core.Model;
+using LocalBack.Core.Service;
+using LocalBack.Core.Storage;
+using LocalBack.Core.Util;
+
+namespace LocalBack.App;
+
+/// <summary>
+/// Lives in the tray. Windows are created when opened and released when closed, so idle memory stays small.
+/// </summary>
+public partial class App : Application
+{
+    private SingleInstance? _instance;
+    private TrayIcon? _tray;
+    private DeviceNotifier? _devices;
+    private DispatcherTimer? _statusTimer;
+    private MainWindow? _main;
+    private TrayFlyout? _flyout;
+    private FreeSpaceWindow? _freeSpace;
+    private DateTime _flyoutClosedAt;
+    private DispatcherTimer? _trimTimer;
+    private EngineLock? _engineLock;
+
+    public static new App Current => (App)Application.Current;
+    private BackupService? _service;
+    public BackupService Service => _service ?? throw new InvalidOperationException("Not started");
+
+    /// <summary>Raised on the UI thread (coalesced) when anything about sets or runs changed.</summary>
+    public event Action? StatusRefreshed;
+
+    /// <summary>Set by UI tests before constructing the app, so the normal startup (tray, first-run dialog) is skipped.</summary>
+    internal static bool TestMode;
+
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        base.OnStartup(e);
+        if (TestMode) return;
+        _instance = new SingleInstance();
+        if (!_instance.TryAcquire())
+        {
+            SingleInstance.Send(e.Args);
+            Shutdown();
+            return;
+        }
+        _instance.ArgumentsReceived += args => Dispatcher.InvokeAsync(() => HandleArgs(args, fromOtherInstance: true));
+        _instance.Listen();
+
+        // A command-line backup or restore may be running; let it finish rather than racing it on the same index and drive.
+        var paths = new AppPaths();
+        _engineLock = EngineLock.Acquire(paths.DataDir, TimeSpan.FromSeconds(60));
+        if (_engineLock == null)
+        {
+            MessageBox.Show(Loc.T("app.cliRunning"), "LocalBack", MessageBoxButton.OK, MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
+
+        DispatcherUnhandledException += (_, ex) =>
+        {
+            Log.Error("Unhandled UI error", ex.Exception);
+            MessageBox.Show(ex.Exception.Message, "LocalBack", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ex.Handled = true;
+        };
+
+        _service = new BackupService(paths) { IsOnBattery = WindowsIntegration.IsOnBattery };
+        Loc.Instance.Apply(_service.Settings.Language);
+        _statusTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, (_, _) => FlushStatus(), Dispatcher);
+        Service.StatusChanged += () => Dispatcher.InvokeAsync(() => { if (!_statusTimer.IsEnabled) _statusTimer.Start(); });
+        Service.LowSpace += info => Dispatcher.InvokeAsync(() => ShowFreeSpace(info.Drive, lowSpace: true));
+        Service.Notify += (title, text, error) => Dispatcher.InvokeAsync(() => _tray?.ShowBalloon(title, text, error));
+
+        _tray = new TrayIcon();
+        _tray.Clicked += ToggleFlyout;
+        _tray.OpenRequested += () => OpenMain();
+        _tray.BackUpNowRequested += () => _ = Service.BackUpNowAsync();
+        _tray.RestoreRequested += () => OpenHistory(null);
+        _tray.PauseToggleRequested += TogglePause;
+        _tray.ExitRequested += ExitApp;
+
+        _devices = new DeviceNotifier();
+        _devices.Arrived += roots => Task.Run(() => { foreach (var r in roots) Service.OnDriveArrived(r); });
+        _devices.Removed += _ => Task.Run(Service.OnDriveRemoved);
+
+        WindowsIntegration.Apply(Service.Settings.StartWithWindows, Service.Settings.ExplorerMenu);
+        Service.Start();
+        FlushStatus();
+        HandleArgs(e.Args, fromOtherInstance: false);
+        _trimTimer = new DispatcherTimer(TimeSpan.FromSeconds(15), DispatcherPriority.ApplicationIdle, (_, _) => TrimIfIdle(), Dispatcher);
+        _trimTimer.Start();
+    }
+
+    /// <summary>Once nothing is open and nothing is running, hand memory back (checked a little after each change).</summary>
+    private void TrimIfIdle()
+    {
+        _trimTimer?.Stop();
+        if (_main != null || _flyout != null || _freeSpace != null || Windows.Count > 0) return;
+        if (_service == null || _service.IsBusy) return;
+        MemoryTrim.Trim();
+    }
+
+    private void ScheduleTrim()
+    {
+        if (_trimTimer == null) return;
+        _trimTimer.Stop();
+        _trimTimer.Start();
+    }
+
+    /// <summary>For UI tests: use a service without tray, device watcher or single-instance lock.</summary>
+    internal void UseServiceForTests(BackupService service)
+    {
+        _service = service;
+        Loc.Instance.Apply(service.Settings.Language);
+        service.StatusChanged += () => Dispatcher.InvokeAsync(FlushStatus);
+    }
+
+    private void HandleArgs(string[] args, bool fromOtherInstance)
+    {
+        int h = Array.IndexOf(args, "--history");
+        if (h >= 0 && h + 1 < args.Length)
+        {
+            OpenHistory(args[h + 1]);
+            return;
+        }
+        if (args.Contains("--tray") && !fromOtherInstance) return;
+        OpenMain();
+        if (Service.Sets.Count == 0 && !fromOtherInstance) ShowAddSet(null);
+    }
+
+    private void FlushStatus()
+    {
+        _statusTimer?.Stop();
+        var statuses = Service.GetStatuses();
+        var worst = Worst(statuses);
+        string tip = statuses.Count == 0 ? Loc.T("tray.tip.none")
+            : Service.RunningSetName is { } running ? Loc.T("tray.tip.running", running)
+            : worst == SetHealth.UpToDate ? Loc.T("tray.tip.upToDate")
+            : Loc.T("tray.tip.other", Ui.StatusText(worst).ToLower(Loc.Instance.Culture));
+        _tray?.Update(worst, tip, Service.IsPaused);
+        StatusRefreshed?.Invoke();
+    }
+
+    public static SetHealth Worst(IReadOnlyList<SetStatus> statuses)
+    {
+        if (statuses.Any(s => s.Health == SetHealth.Running)) return SetHealth.Running;
+        foreach (var h in new[] { SetHealth.Error, SetHealth.Locked, SetHealth.DriveMissing, SetHealth.Paused, SetHealth.Pending, SetHealth.NeverRun })
+            if (statuses.Any(s => s.Health == h)) return h;
+        // Browse-only sets do not count against "everything is backed up".
+        if (statuses.All(s => s.Health == SetHealth.Disabled)) return SetHealth.Disabled;
+        return SetHealth.UpToDate;
+    }
+
+    // ------------------------------------------------------------------ windows
+
+    public MainWindow OpenMain()
+    {
+        if (_main == null)
+        {
+            _main = new MainWindow();
+            _main.Closed += (_, _) =>
+            {
+                _main = null;
+                // Windows are the bulk of the working set; give it back once things settle.
+                ScheduleTrim();
+            };
+            _main.Show();
+        }
+        if (_main.WindowState == WindowState.Minimized) _main.WindowState = WindowState.Normal;
+        _main.Activate();
+        return _main;
+    }
+
+    public void OpenHistory(string? path, BackupSet? set = null)
+    {
+        var main = OpenMain();
+        main.ViewModel.ShowHistory(set, path);
+    }
+
+    public void ShowAddSet(BackupSet? editing)
+    {
+        var owner = OpenMain();
+        var dlg = new AddSetWindow(editing) { Owner = owner };
+        if (dlg.ShowDialog() == true) FlushStatus();
+    }
+
+    /// <summary>Asks for a destination's password. True when it was unlocked.</summary>
+    public bool ShowUnlock(DriveStore drive)
+    {
+        var dlg = new UnlockWindow(drive);
+        if (_main != null) dlg.Owner = _main;
+        var ok = dlg.ShowDialog() == true;
+        if (ok) FlushStatus();
+        return ok;
+    }
+
+    /// <summary>Re-reads the language setting and relabels what is not bound (tray menu, tooltip).</summary>
+    public void ApplyLanguage()
+    {
+        Loc.Instance.Apply(Service.Settings.Language);
+        _tray?.Relabel();
+        FlushStatus();
+    }
+
+    public void ShowFreeSpace(DriveStore drive, bool lowSpace)
+    {
+        if (_freeSpace != null)
+        {
+            _freeSpace.Activate();
+            return;
+        }
+        _freeSpace = new FreeSpaceWindow(drive, lowSpace);
+        if (_main != null) _freeSpace.Owner = _main;
+        _freeSpace.Closed += (_, _) => _freeSpace = null;
+        _freeSpace.Show();
+        _freeSpace.Activate();
+    }
+
+    private void ToggleFlyout()
+    {
+        if (_flyout != null)
+        {
+            _flyout.Close();
+            return;
+        }
+        // Clicking the tray icon deactivates (and closes) the flyout first; don't reopen it immediately.
+        if ((DateTime.UtcNow - _flyoutClosedAt).TotalMilliseconds < 300) return;
+        _flyout = new TrayFlyout();
+        _flyout.Closed += (_, _) =>
+        {
+            _flyout = null;
+            _flyoutClosedAt = DateTime.UtcNow;
+            ScheduleTrim();
+        };
+        _flyout.Show();
+        _flyout.Activate();
+    }
+
+    public void TogglePause()
+    {
+        if (Service.IsPaused) Service.Resume();
+        else Service.Pause(TimeSpan.FromHours(1));
+    }
+
+    public void ExitApp()
+    {
+        _flyout?.Close();
+        _main?.Close();
+        Shutdown();
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _devices?.Dispose();
+        _tray?.Dispose();
+        _service?.Dispose();
+        _service?.Engine.CleanTemp();
+        _engineLock?.Dispose();
+        _instance?.Dispose();
+        base.OnExit(e);
+    }
+
+    /// <summary>Describes a set's drive for the UI: "E: Samsung T7".</summary>
+    public string DriveDisplayName(BackupSet set) =>
+        Service.DriveFor(set) is { } d ? BackupService.DriveName(d)
+        : string.IsNullOrEmpty(set.Drive.Label) ? set.Drive.LastRoot.TrimEnd('\\') : $"{set.Drive.LastRoot.TrimEnd('\\')} {set.Drive.Label}";
+
+    public static List<DriveCandidate> BackupDriveChoices() =>
+        DriveLocator.ListDrives().Where(d => !d.IsSystem).ToList();
+}

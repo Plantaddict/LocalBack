@@ -1,0 +1,67 @@
+<UserControl x:Class="LocalBack.App.Views.DrivesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:LocalBack.App.Controls"
+             xmlns:l="clr-namespace:LocalBack.App.Localization">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="Vis"/>
+    </UserControl.Resources>
+    <DockPanel Margin="28,24">
+        <DockPanel DockPanel.Dock="Top" Margin="0,0,0,18">
+            <Button DockPanel.Dock="Right" Style="{StaticResource BtnSecondary}" Content="{l:T btn.refresh}" Command="{Binding RefreshCommand}" VerticalAlignment="Top"/>
+            <StackPanel>
+                <TextBlock Text="{l:T drives.title}" Style="{StaticResource H1}"/>
+                <TextBlock Text="{l:T drives.intro}" Foreground="{StaticResource TextSecondary}" Margin="0,4,16,0" TextWrapping="Wrap"/>
+            </StackPanel>
+        </DockPanel>
+        <Grid>
+            <TextBlock Text="{l:T drives.empty}" Foreground="{StaticResource TextSecondary}" TextWrapping="Wrap"
+                       Visibility="{Binding IsEmpty, Converter={StaticResource Vis}}"/>
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Drives}" Focusable="False">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Style="{StaticResource Card}" Margin="0,0,0,10">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <Border DockPanel.Dock="Left" Width="40" Height="40" CornerRadius="8" Background="{StaticResource AccentTint}" VerticalAlignment="Top">
+                                            <c:Icon Data="{StaticResource IconDrive}" Width="20" Height="20" Foreground="{StaticResource Accent}" HorizontalAlignment="Center"/>
+                                        </Border>
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button Style="{StaticResource BtnSecondarySm}" Content="{l:T drives.unlock}" Command="{Binding Unlock}"
+                                                    Visibility="{Binding IsLocked, Converter={StaticResource Vis}}"/>
+                                            <Button Style="{StaticResource BtnSecondarySm}" Content="{l:T drives.freeUp}" Command="{Binding FreeUp}"
+                                                    Visibility="{Binding IsBackupDrive, Converter={StaticResource Vis}}"/>
+                                        </StackPanel>
+                                        <StackPanel Margin="14,0">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" Text="{Binding Details}" Style="{StaticResource Secondary}" Margin="12,0,0,0"/>
+                                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                            </DockPanel>
+                                            <TextBlock Text="{Binding Sets}" Style="{StaticResource Secondary}" Margin="0,2,0,6"/>
+                                            <ProgressBar Height="6" Value="{Binding UsedPercent, Mode=OneWay}" Maximum="100" BorderThickness="0"
+                                                         Foreground="{StaticResource Accent}" Background="{StaticResource Border}"/>
+                                            <TextBlock Text="{Binding FreeText}" Style="{StaticResource Secondary}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <ItemsControl ItemsSource="{Binding Foreign}" Margin="54,8,0,0" Visibility="{Binding HasForeign, Converter={StaticResource Vis}}" Focusable="False">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border BorderBrush="{StaticResource Divider}" BorderThickness="0,1,0,0" Padding="0,6">
+                                                    <DockPanel>
+                                                        <Button DockPanel.Dock="Right" Style="{StaticResource BtnOutlineSm}" Content="{l:T drives.addToPc}" Command="{Binding Add}"/>
+                                                        <TextBlock Text="{Binding Text}" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,12,0"/>
+                                                    </DockPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+    </DockPanel>
+</UserControl>
