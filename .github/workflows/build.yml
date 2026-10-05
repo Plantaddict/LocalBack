@@ -1,0 +1,44 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: LocalBack
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Test engine
+        run: dotnet test tests/LocalBack.Core.Tests --configuration Release --logger "console;verbosity=normal"
+      - name: Build app
+        if: hashFiles('LocalBack/src/LocalBack.App/LocalBack.App.csproj') != ''
+        run: dotnet build src/LocalBack.App --configuration Release
+      - name: Publish app
+        if: hashFiles('LocalBack/src/LocalBack.App/LocalBack.App.csproj') != ''
+        run: dotnet publish src/LocalBack.App -c Release -r win-x64 --self-contained -o publish/LocalBack
+      - name: Publish CLI
+        run: dotnet publish src/LocalBack.Cli -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish/LocalBack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LocalBack-win-x64
+          path: LocalBack/publish/LocalBack
+
+  linux-engine:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: LocalBack
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet test tests/LocalBack.Core.Tests --configuration Release
