@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Threading;
 using LocalBack.App.Localization;
 using LocalBack.App.Services;
+using LocalBack.App.ViewModels;
 using LocalBack.App.Views;
 using LocalBack.Core.Drives;
 using LocalBack.Core.Model;
