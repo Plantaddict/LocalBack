@@ -17,7 +17,7 @@ public static class Ui
     public static Brush Dot(SetHealth h) => h switch
     {
         SetHealth.UpToDate => Brush("Green"),
-        SetHealth.Running => Brush("Accent"),
+        SetHealth.Running or SetHealth.Encrypting => Brush("Accent"),
         SetHealth.Error => Brush("Red"),
         SetHealth.NeverRun or SetHealth.Disabled => Brush("BorderStrong"),
         _ => Brush("Amber"),
@@ -36,7 +36,7 @@ public static class Ui
     /// <summary>Short form for the tray list: "14:32", "3 pending".</summary>
     public static string ShortWhen(SetStatus s) => s.Health switch
     {
-        SetHealth.Running or SetHealth.Error or SetHealth.Disabled or SetHealth.Locked => Loc.T("short." + s.Health),
+        SetHealth.Running or SetHealth.Error or SetHealth.Disabled or SetHealth.Locked or SetHealth.Encrypting => Loc.T("short." + s.Health),
         _ when s.PendingCount > 0 => Format.Plural(s.PendingCount, "pending", "pending"),
         SetHealth.DriveMissing => Loc.T("short.DriveMissing"),
         _ => s.LastRun is { } t ? (t.ToLocalTime().Date == DateTime.Today ? t.ToLocalTime().ToString("HH:mm") : Format.When(t)) : Loc.T("short.never"),

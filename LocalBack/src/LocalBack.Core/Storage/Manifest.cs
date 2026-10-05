@@ -64,6 +64,8 @@ public sealed class Manifest
             }
         });
 
+    public static bool IsEncryptedFile(string path) => BlobStore.IsEncryptedFile(path);
+
     public static Manifest Read(string path, byte[]? key = null)
     {
         using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.SequentialScan);

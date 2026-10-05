@@ -28,7 +28,27 @@ public sealed class DrivesViewModel : ObservableObject
 
     public void Refresh() => _ = RefreshAsync();
 
+    private bool _refreshing;
+    private DateTime _lastRefresh;
+
+    /// <summary>Status ticks arrive throttled; the page only re-reads drives while a destination is being encrypted.</summary>
+    public void OnStatusChanged()
+    {
+        if (_refreshing || DateTime.UtcNow - _lastRefresh < TimeSpan.FromSeconds(1)) return;
+        if (!_app.Service.IsBusy) return;
+        Refresh();
+    }
+
     private async Task RefreshAsync()
+    {
+        if (_refreshing) return;
+        _refreshing = true;
+        _lastRefresh = DateTime.UtcNow;
+        try { await RefreshCoreAsync(); }
+        finally { _refreshing = false; }
+    }
+
+    private async Task RefreshCoreAsync()
     {
         var service = _app.Service;
         var rows = await Task.Run(() =>
@@ -70,6 +90,11 @@ public sealed class DrivesViewModel : ObservableObject
         if (_app.ShowUnlock(store)) Refresh();
     }
 
+    internal void Protect(DriveStore store)
+    {
+        if (_app.ShowProtect(store)) Refresh();
+    }
+
     internal void Import(DriveStore store, BackupSet set)
     {
         bool watch = set.Folders.All(Directory.Exists) &&
@@ -85,7 +110,11 @@ public sealed class DriveRowViewModel
     {
         Name = string.IsNullOrEmpty(d.Label) && d.Letter.Length > 2 ? d.Root : d.DisplayName;
         var kind = isNetwork ? Loc.T("drives.network") : d.IsRemovable ? Loc.T("drives.removable") : Loc.T("drives.fixed");
-        Details = string.Join(" · ", new[] { kind, d.Format, store is { IsEncrypted: true } ? Loc.T("drives.encrypted") : "" }.Where(s => !string.IsNullOrEmpty(s)));
+        var service = App.Current.Service;
+        var encrypting = store is { IsEncrypting: true } ? service.EncryptProgress(store) : null;
+        var crypto = encrypting is { } e ? (e.Total > 0 ? Loc.T("drives.encrypting", e.Done, e.Total) : Loc.T("drives.encryptingQueued"))
+            : store is { IsEncrypted: true } ? Loc.T("drives.encrypted") : "";
+        Details = string.Join(" · ", new[] { kind, d.Format, crypto }.Where(s => !string.IsNullOrEmpty(s)));
         UsedPercent = d.Total > 0 ? 100.0 * (d.Total - d.Free) / d.Total : 0;
         FreeText = d.Total > 0 ? Loc.T("drive.freeOf", Format.Size(d.Free), Format.Size(d.Total)) : "";
         Sets = store is { IsLocked: true } ? Loc.T("drives.locked")
@@ -94,8 +123,10 @@ public sealed class DriveRowViewModel
         Foreign = foreign.Select(f => new ForeignSet(f, new RelayCommand(() => owner.Import(store!, f)))).ToList();
         IsBackupDrive = store != null && !store.IsLocked;
         IsLocked = store is { IsLocked: true };
+        CanProtect = store is { IsEncrypted: false };
         FreeUp = new RelayCommand(() => owner.FreeUp(store!), () => store != null);
         Unlock = new RelayCommand(() => owner.Unlock(store!), () => store != null);
+        Protect = new RelayCommand(() => owner.Protect(store!), () => store != null);
     }
 
     public string Name { get; }
@@ -105,10 +136,13 @@ public sealed class DriveRowViewModel
     public string Sets { get; }
     public bool IsBackupDrive { get; }
     public bool IsLocked { get; }
+    /// <summary>Holds backups but no password yet.</summary>
+    public bool CanProtect { get; }
     public List<ForeignSet> Foreign { get; }
     public bool HasForeign => Foreign.Count > 0;
     public ICommand FreeUp { get; }
     public ICommand Unlock { get; }
+    public ICommand Protect { get; }
 }
 
 public sealed record ForeignSet(BackupSet Set, ICommand Add)

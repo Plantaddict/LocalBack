@@ -225,6 +225,13 @@ public class ScreensTests
         Snap(unlock, "Unlock");
         unlock.Close();
 
+        Step("protect");
+        var protect = new ProtectWindow(service.DriveFor(set1)!);
+        protect.Show();
+        Pump(300);
+        Snap(protect, "Protect");
+        protect.Close();
+
         Step("polish");
         service.Settings.Language = "pl";
         app.ApplyLanguage();

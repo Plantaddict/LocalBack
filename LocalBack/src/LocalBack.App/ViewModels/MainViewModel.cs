@@ -105,6 +105,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Sets.Refresh();
         _history?.RefreshSets();
         if (Page == Page.History) _history?.OnStatusChanged();
+        if (Page == Page.Drives) _drives?.OnStatusChanged();
         var service = _app.Service;
         var set = service.Sets.FirstOrDefault(s => service.DriveFor(s) != null) ?? service.Sets.FirstOrDefault();
         if (set == null)

@@ -1,9 +1,12 @@
 ; LocalBack installer (Inno Setup 6). Per-user install, no admin rights.
-; Build: iscc installer\LocalBack.iss /DAppVersion=0.1.0 /DSourceDir=..\publish\LocalBack
+; Build: iscc installer\LocalBack.iss /DAppVersion=0.2.0 /DBuildNumber=31 /DSourceDir=..\publish\LocalBack
 
 #define AppName "LocalBack"
 #ifndef AppVersion
-  #define AppVersion "0.1.0"
+  #define AppVersion "0.2.0"
+#endif
+#ifndef BuildNumber
+  #define BuildNumber "0"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\publish\LocalBack"
@@ -13,7 +16,8 @@
 AppId={{8F3C2B1A-6D4E-4F7A-9C2B-1E5D7A9B3C4F}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppVerName={#AppName} {#AppVersion}
+AppVerName={#AppName} {#AppVersion} (build {#BuildNumber})
+VersionInfoVersion={#AppVersion}.{#BuildNumber}
 AppPublisher=LocalBack
 DefaultDirName={localappdata}\Programs\LocalBack
 DisableDirPage=auto

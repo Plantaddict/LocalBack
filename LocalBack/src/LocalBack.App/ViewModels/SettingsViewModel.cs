@@ -88,7 +88,15 @@ public sealed class SettingsViewModel : ObservableObject
     public string PauseButton => Loc.T(Service.IsPaused ? "settings.resume" : "settings.pause1h");
     public ICommand TogglePause { get; }
     public ICommand OpenLogs { get; }
-    public string Version => $"LocalBack {typeof(App).Assembly.GetName().Version?.ToString(3)}";
+    /// <summary>"LocalBack 0.2.0 (build 31)": the build number is set by CI, so two installers can be told apart.</summary>
+    public string Version
+    {
+        get
+        {
+            var v = typeof(App).Assembly.GetName().Version;
+            return v == null ? "LocalBack" : v.Revision > 0 ? $"LocalBack {v.ToString(3)} (build {v.Revision})" : $"LocalBack {v.ToString(3)}";
+        }
+    }
 
     private void Save(Action<AppSettings> change)
     {

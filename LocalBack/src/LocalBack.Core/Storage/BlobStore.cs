@@ -88,7 +88,44 @@ public sealed class BlobStore
     public Stream OpenRead(string hash)
     {
         var file = new FileStream(PathFor(hash), FileMode.Open, FileAccess.Read, FileShare.Read, Hashing.BufferSize, FileOptions.SequentialScan);
-        return Key != null ? ChunkedAesGcm.CreateDecryptor(file, Key) : file;
+        if (Key == null) return file;
+        // A blob written before the password was added is still plain until EncryptInPlace reaches it.
+        Span<byte> head = stackalloc byte[4];
+        int got = file.Read(head);
+        file.Position = 0;
+        return got == 4 && ChunkedAesGcm.LooksEncrypted(head) ? ChunkedAesGcm.CreateDecryptor(file, Key) : file;
+    }
+
+    /// <summary>Encrypts a blob that was stored plain. Nothing happens when it is already encrypted or gone.</summary>
+    public void EncryptInPlace(string hash)
+    {
+        var key = Key ?? throw new InvalidOperationException("No key.");
+        var path = PathFor(hash);
+        if (!File.Exists(path) || IsEncryptedFile(path)) return;
+        Directory.CreateDirectory(TempDir);
+        var tmp = Path.Combine(TempDir, Guid.NewGuid().ToString("N"));
+        try
+        {
+            using (var src = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, Hashing.BufferSize, FileOptions.SequentialScan))
+            using (var file = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None, Hashing.BufferSize, FileOptions.SequentialScan))
+            {
+                using (var enc = ChunkedAesGcm.CreateEncryptor(file, key)) src.CopyTo(enc, Hashing.BufferSize);
+                file.Flush(true);
+            }
+            File.Move(tmp, path, overwrite: true);
+        }
+        catch
+        {
+            AtomicFile.TryDelete(tmp);
+            throw;
+        }
+    }
+
+    internal static bool IsEncryptedFile(string path)
+    {
+        using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 16, FileOptions.None);
+        Span<byte> head = stackalloc byte[4];
+        return fs.Read(head) == 4 && ChunkedAesGcm.LooksEncrypted(head);
     }
 
     public long SizeOf(string hash)
