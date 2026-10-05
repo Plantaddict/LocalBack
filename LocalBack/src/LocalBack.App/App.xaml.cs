@@ -75,6 +75,13 @@ public partial class App : Application
         HandleArgs(e.Args, fromOtherInstance: false);
     }
 
+    /// <summary>For UI tests: use a service without tray, device watcher or single-instance lock.</summary>
+    internal void UseServiceForTests(BackupService service)
+    {
+        _service = service;
+        service.StatusChanged += () => Dispatcher.InvokeAsync(FlushStatus);
+    }
+
     private void HandleArgs(string[] args, bool fromOtherInstance)
     {
         int h = Array.IndexOf(args, "--history");

@@ -21,6 +21,15 @@ jobs:
       - name: Build app
         if: hashFiles('LocalBack/src/LocalBack.App/LocalBack.App.csproj') != ''
         run: dotnet build src/LocalBack.App --configuration Release
+      - name: Open every screen
+        if: hashFiles('LocalBack/tests/LocalBack.App.Tests/LocalBack.App.Tests.csproj') != ''
+        run: dotnet test tests/LocalBack.App.Tests --configuration Release --logger "console;verbosity=normal"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: LocalBack/tests/LocalBack.App.Tests/bin/Release/net8.0-windows/screenshots
+          if-no-files-found: ignore
       - name: Publish app
         if: hashFiles('LocalBack/src/LocalBack.App/LocalBack.App.csproj') != ''
         run: dotnet publish src/LocalBack.App -c Release -r win-x64 --self-contained -o publish/LocalBack

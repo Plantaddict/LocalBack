@@ -27,6 +27,9 @@
     <ProjectReference Include="..\LocalBack.Core\LocalBack.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="LocalBack.App.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <Resource Include="Assets\LocalBack.ico" />
   </ItemGroup>
 </Project>
