@@ -39,8 +39,25 @@ public class ScreensTests
         bool finished = t.Join(TimeSpan.FromMinutes(2));
         string steps;
         lock (Steps) steps = string.Join(Environment.NewLine, Steps);
-        Assert.True(finished, "UI test timed out after these steps:" + Environment.NewLine + steps);
+        Assert.True(finished, "UI test timed out after these steps:" + Environment.NewLine + steps + Environment.NewLine + StackOf(t.ManagedThreadId));
         if (error != null) throw new Exception("UI test failed after these steps:" + Environment.NewLine + steps + Environment.NewLine + error, error);
+    }
+
+    /// <summary>Stack of a hung thread, read from a snapshot of this process.</summary>
+    private static string StackOf(int managedThreadId)
+    {
+        try
+        {
+            using var target = Microsoft.Diagnostics.Runtime.DataTarget.CreateSnapshotAndAttach(Environment.ProcessId);
+            var runtime = target.ClrVersions[0].CreateRuntime();
+            var thread = runtime.Threads.FirstOrDefault(x => x.ManagedThreadId == managedThreadId);
+            if (thread == null) return "(thread not found)";
+            return string.Join(Environment.NewLine, thread.EnumerateStackTrace().Take(60).Select(f => "  at " + (f.Method?.Signature ?? f.FrameName ?? f.Kind.ToString())));
+        }
+        catch (Exception ex)
+        {
+            return "(no stack: " + ex.Message + ")";
+        }
     }
 
     private static void Run()
@@ -82,7 +99,9 @@ public class ScreensTests
         var main = new MainWindow();
         Step("show main");
         main.Show();
+        Step("shown");
         Pump(500);
+        Step("pumped");
         Step("snap main");
         Snap(main, "Main");
 
