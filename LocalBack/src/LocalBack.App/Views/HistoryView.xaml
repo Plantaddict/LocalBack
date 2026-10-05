@@ -28,6 +28,35 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <!-- "Changes | Folders" view switch -->
+        <Style x:Key="Segment" TargetType="RadioButton">
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="bd" Background="Transparent" CornerRadius="5" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource Hover}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="White"/>
+                                <Setter Property="Foreground" Value="{StaticResource Text}"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
@@ -112,7 +141,28 @@
             <Border DockPanel.Dock="Top" BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1" Padding="24,10">
                 <DockPanel>
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="10,0,0,0">
-                        <CheckBox IsChecked="{Binding OnlyChanged}" Foreground="{StaticResource TextSecondary}" IsEnabled="{Binding ShowDeleted, Converter={x:Static v:Converters.Not}}">
+                        <Border Background="{StaticResource Panel2}" CornerRadius="6" Padding="2" VerticalAlignment="Center"
+                                Visibility="{Binding ShowDeleted, Converter={x:Static v:Converters.NotVis}}">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton Style="{StaticResource Segment}" GroupName="historyView" IsChecked="{Binding BrowseFolders, Converter={x:Static v:Converters.Not}}"
+                                             AutomationProperties.Name="{l:T browse.changes}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <c:Icon Data="{StaticResource IconList}" Width="14" Height="14"/>
+                                        <TextBlock Text="{l:T browse.changes}" Margin="6,0,0,0"/>
+                                    </StackPanel>
+                                </RadioButton>
+                                <RadioButton Style="{StaticResource Segment}" GroupName="historyView" IsChecked="{Binding BrowseFolders}"
+                                             AutomationProperties.Name="{l:T browse.folders}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <c:Icon Data="{StaticResource IconFolder}" Width="14" Height="14"/>
+                                        <TextBlock Text="{l:T browse.folders}" Margin="6,0,0,0"/>
+                                    </StackPanel>
+                                </RadioButton>
+                            </StackPanel>
+                        </Border>
+                        <CheckBox IsChecked="{Binding OnlyChanged}" Foreground="{StaticResource TextSecondary}" Margin="14,0,0,0"
+                                  IsEnabled="{Binding ShowDeleted, Converter={x:Static v:Converters.Not}}"
+                                  Visibility="{Binding ShowList, Converter={StaticResource Vis}}">
                             <TextBlock Text="{l:T history.onlyChanged}"/>
                         </CheckBox>
                         <CheckBox IsChecked="{Binding ShowDeleted}" Foreground="{StaticResource TextSecondary}" Margin="14,0,0,0">
@@ -131,58 +181,193 @@
                 </DockPanel>
             </Border>
 
-            <Grid Margin="24,6,24,12">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                <Grid Margin="10,8" TextElement.FontSize="11" TextElement.Foreground="{StaticResource TextSecondary}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="80"/>
-                        <ColumnDefinition Width="100"/>
-                        <ColumnDefinition Width="190"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="{l:T history.col.file}"/>
-                    <TextBlock Grid.Column="1" Text="{l:T history.col.size}" Margin="12,0,0,0"/>
-                    <TextBlock Grid.Column="2" Text="{l:T history.col.change}" Margin="12,0,0,0"/>
+            <Grid>
+                <!-- Changes: flat list of the snapshot's files -->
+                <Grid Margin="24,6,24,12" Visibility="{Binding ShowList, Converter={StaticResource Vis}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid Margin="10,8" TextElement.FontSize="11" TextElement.Foreground="{StaticResource TextSecondary}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="80"/>
+                            <ColumnDefinition Width="100"/>
+                            <ColumnDefinition Width="190"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{l:T history.col.file}"/>
+                        <TextBlock Grid.Column="1" Text="{l:T history.col.size}" Margin="12,0,0,0"/>
+                        <TextBlock Grid.Column="2" Text="{l:T history.col.change}" Margin="12,0,0,0"/>
+                    </Grid>
+
+                    <ListBox Grid.Row="1" Style="{StaticResource PlainList}" ItemsSource="{Binding Files}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{StaticResource Divider}" BorderThickness="0,1,0,0" Padding="10,8">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="80"/>
+                                            <ColumnDefinition Width="100"/>
+                                            <ColumnDefinition Width="190"/>
+                                        </Grid.ColumnDefinitions>
+                                        <DockPanel ToolTip="{Binding FullPath}">
+                                            <c:Icon DockPanel.Dock="Left" Data="{StaticResource IconFile}" Foreground="{StaticResource TextSecondary}"/>
+                                            <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding Detail}" Style="{StaticResource Secondary}" TextTrimming="CharacterEllipsis"
+                                                           Visibility="{Binding HasDetail, Converter={StaticResource Vis}}"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding Size}" FontSize="13" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                        <Border Grid.Column="2" CornerRadius="10" Padding="8,2" Background="{Binding TagBackground}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,0,0,0" MaxWidth="88">
+                                            <TextBlock Text="{Binding Change}" FontSize="12" Foreground="{Binding TagForeground}" TextTrimming="CharacterEllipsis"/>
+                                        </Border>
+                                        <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <Button Style="{StaticResource BtnSecondarySm}" Content="{l:T history.open}" Command="{Binding Open}"/>
+                                            <Button Style="{StaticResource BtnOutlineSm}" Content="{Binding RestoreText}" Command="{Binding Restore}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock Grid.Row="1" Text="{Binding EmptyFilesText}" Foreground="{StaticResource TextSecondary}" Margin="10,16" TextWrapping="Wrap"
+                               Visibility="{Binding FilesEmpty, Converter={StaticResource Vis}}"/>
                 </Grid>
 
-                <ListBox Grid.Row="1" Style="{StaticResource PlainList}" ItemsSource="{Binding Files}">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Border BorderBrush="{StaticResource Divider}" BorderThickness="0,1,0,0" Padding="10,8">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="80"/>
-                                        <ColumnDefinition Width="100"/>
-                                        <ColumnDefinition Width="190"/>
-                                    </Grid.ColumnDefinitions>
-                                    <DockPanel ToolTip="{Binding FullPath}">
-                                        <c:Icon DockPanel.Dock="Left" Data="{StaticResource IconFile}" Foreground="{StaticResource TextSecondary}"/>
-                                        <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"/>
-                                            <TextBlock Text="{Binding Detail}" Style="{StaticResource Secondary}" TextTrimming="CharacterEllipsis"
-                                                       Visibility="{Binding HasDetail, Converter={StaticResource Vis}}"/>
-                                        </StackPanel>
-                                    </DockPanel>
-                                    <TextBlock Grid.Column="1" Text="{Binding Size}" FontSize="13" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="12,0,0,0"/>
-                                    <Border Grid.Column="2" CornerRadius="10" Padding="8,2" Background="{Binding TagBackground}" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="12,0,0,0" MaxWidth="88">
-                                        <TextBlock Text="{Binding Change}" FontSize="12" Foreground="{Binding TagForeground}" TextTrimming="CharacterEllipsis"/>
-                                    </Border>
-                                    <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right">
-                                        <Button Style="{StaticResource BtnSecondarySm}" Content="{l:T history.open}" Command="{Binding Open}"/>
-                                        <Button Style="{StaticResource BtnOutlineSm}" Content="{Binding RestoreText}" Command="{Binding Restore}" Margin="6,0,0,0"/>
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-                <TextBlock Grid.Row="1" Text="{Binding EmptyFilesText}" Foreground="{StaticResource TextSecondary}" Margin="10,16" TextWrapping="Wrap"
-                           Visibility="{Binding FilesEmpty, Converter={StaticResource Vis}}"/>
-                <ProgressBar Grid.Row="0" Height="2" IsIndeterminate="True" VerticalAlignment="Bottom" BorderThickness="0" Background="Transparent"
+                <!-- Folders: browse the snapshot like a drive in Explorer -->
+                <Grid Margin="24,10,24,8" Visibility="{Binding ShowBrowser, Converter={StaticResource Vis}}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Address bar -->
+                    <DockPanel Margin="0,0,0,8">
+                        <Button Style="{StaticResource BtnIcon}" Command="{Binding Browser.Back}" ToolTip="{l:T browse.back}" AutomationProperties.Name="{l:T browse.back}">
+                            <c:Icon Data="{StaticResource IconBack}"/>
+                        </Button>
+                        <Button Style="{StaticResource BtnIcon}" Command="{Binding Browser.Forward}" ToolTip="{l:T browse.forward}" AutomationProperties.Name="{l:T browse.forward}">
+                            <c:Icon Data="{StaticResource IconForward}"/>
+                        </Button>
+                        <Button Style="{StaticResource BtnIcon}" Command="{Binding Browser.Up}" ToolTip="{l:T browse.up}" AutomationProperties.Name="{l:T browse.up}">
+                            <c:Icon Data="{StaticResource IconUp}"/>
+                        </Button>
+                        <Border Background="White" BorderBrush="{StaticResource BorderStrong}" BorderThickness="1" CornerRadius="6" Height="32" Margin="6,0,0,0"
+                                ToolTip="{Binding Browser.AddressText}">
+                            <DockPanel>
+                                <c:Icon DockPanel.Dock="Left" Data="{StaticResource IconFolder}" Foreground="{StaticResource TextSecondary}" Margin="8,0,2,0"/>
+                                <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" VerticalAlignment="Center">
+                                    <ItemsControl ItemsSource="{Binding Browser.Crumbs}" Focusable="False">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button Style="{StaticResource BtnGhostSm}" Height="24" Padding="6,0" FontWeight="{Binding Weight}" Content="{Binding Name}" Command="{Binding Go}"/>
+                                                    <TextBlock Text="›" Foreground="{StaticResource TextSecondary}" VerticalAlignment="Center" Margin="1,0"
+                                                               Visibility="{Binding IsLast, Converter={x:Static v:Converters.NotVis}}"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </DockPanel>
+                        </Border>
+                    </DockPanel>
+
+                    <!-- Details list -->
+                    <ListView x:Name="FolderList" Grid.Row="1" ItemsSource="{Binding Browser.Items}" SelectedItem="{Binding Browser.SelectedItem}"
+                              SelectionMode="Extended" BorderThickness="1" BorderBrush="{StaticResource Border}" Background="White" FontSize="13"
+                              VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                              SelectionChanged="FolderList_SelectionChanged" KeyDown="FolderList_KeyDown" SizeChanged="FolderList_SizeChanged"
+                              GridViewColumnHeader.Click="FolderList_HeaderClick" AutomationProperties.Name="{l:T browse.folders}">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Setter Property="Padding" Value="4,3"/>
+                                <Setter Property="Foreground" Value="{StaticResource Text}"/>
+                                <Setter Property="ToolTip" Value="{Binding Tooltip}"/>
+                                <EventSetter Event="MouseDoubleClick" Handler="FolderItem_DoubleClick"/>
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="{l:T browse.open}" Command="{Binding Browser.OpenSelected}" FontWeight="SemiBold"/>
+                                <Separator/>
+                                <MenuItem Header="{l:T history.restore}" Command="{Binding Browser.RestoreSelected}"/>
+                                <MenuItem Header="{l:T browse.restoreTo}" Command="{Binding Browser.RestoreSelectedTo}"/>
+                            </ContextMenu>
+                        </ListView.ContextMenu>
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn x:Name="NameColumn" Width="260">
+                                    <GridViewColumn.Header>
+                                        <GridViewColumnHeader Content="{l:T browse.col.name}" Tag="Name" HorizontalContentAlignment="Left" Padding="8,4"/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <DockPanel>
+                                                <Grid DockPanel.Dock="Left" Width="16" Height="16" VerticalAlignment="Center">
+                                                    <Image Source="{Binding Icon}" RenderOptions.BitmapScalingMode="HighQuality"
+                                                           Visibility="{Binding HasIcon, Converter={StaticResource Vis}}"/>
+                                                    <c:Icon Data="{Binding FallbackIcon}" Foreground="{StaticResource TextSecondary}"
+                                                            Visibility="{Binding HasIcon, Converter={x:Static v:Converters.NotVis}}"/>
+                                                </Grid>
+                                                <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                                                    <Run Text="{Binding Name, Mode=OneWay}"/><Run Text="{Binding LocationText, Mode=OneWay}" Foreground="{StaticResource TextSecondary}" FontSize="12"/>
+                                                </TextBlock>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn x:Name="ModifiedColumn" Width="116" DisplayMemberBinding="{Binding Modified}">
+                                    <GridViewColumn.Header>
+                                        <GridViewColumnHeader Content="{l:T browse.col.modified}" Tag="Modified" HorizontalContentAlignment="Left" Padding="8,4"/>
+                                    </GridViewColumn.Header>
+                                </GridViewColumn>
+                                <GridViewColumn x:Name="TypeColumn" Width="118" DisplayMemberBinding="{Binding TypeName}">
+                                    <GridViewColumn.Header>
+                                        <GridViewColumnHeader Content="{l:T browse.col.type}" Tag="Type" HorizontalContentAlignment="Left" Padding="8,4"/>
+                                    </GridViewColumn.Header>
+                                </GridViewColumn>
+                                <GridViewColumn x:Name="SizeColumn" Width="74">
+                                    <GridViewColumn.Header>
+                                        <GridViewColumnHeader Content="{l:T browse.col.size}" Tag="Size" HorizontalContentAlignment="Right" Padding="8,4"/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Size}" HorizontalAlignment="Right" Margin="0,0,4,0"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn x:Name="ChangeColumn" Width="84">
+                                    <GridViewColumn.Header>
+                                        <GridViewColumnHeader Content="{l:T browse.col.change}" Tag="Change" HorizontalContentAlignment="Left" Padding="8,4"/>
+                                    </GridViewColumn.Header>
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Change}" Foreground="{Binding ChangeForeground}" FontSize="12"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                    <TextBlock Grid.Row="1" Text="{Binding Browser.EmptyText}" Foreground="{StaticResource TextSecondary}" Margin="12,40,12,0" TextWrapping="Wrap"
+                               IsHitTestVisible="False" Visibility="{Binding Browser.IsEmpty, Converter={StaticResource Vis}}"/>
+
+                    <!-- Status strip, like Explorer's -->
+                    <TextBlock Grid.Row="2" Text="{Binding Browser.StatusText}" Style="{StaticResource Secondary}" Margin="4,6,0,0"/>
+                </Grid>
+
+                <ProgressBar Height="2" IsIndeterminate="True" VerticalAlignment="Top" Margin="24,0" BorderThickness="0" Background="Transparent"
                              Foreground="{StaticResource Accent}" Visibility="{Binding Loading, Converter={StaticResource Vis}}"/>
             </Grid>
         </DockPanel>

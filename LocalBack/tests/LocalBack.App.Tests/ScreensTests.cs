@@ -118,6 +118,49 @@ public class ScreensTests
         Pump(1500);
         Snap(main, "History-file");
 
+        Step("folders view");
+        history.BrowseFolders = true;
+        Pump(1500);
+        var browser = history.Browser;
+        Assert.True(browser.HasTree, "folder tree not built");
+        Assert.Equal("Desktop", browser.Folder?.Name);
+        Assert.Single(browser.Items);                               // the search from the Explorer menu still applies
+        main.ViewModel.ShowHistory(null, Path.Combine(desktop, "notes.txt"));
+        Pump(1500);
+        Assert.Equal("", history.Search);                           // in the Folders view the file is selected, not searched
+        Assert.Equal(4, browser.Items.Count);                       // the files present in the newest snapshot; the deleted one is gone
+        Assert.All(browser.Items, i => Assert.False(i.IsFolder));
+        Assert.All(browser.Items, i => Assert.True(i.HasIcon, "no shell icon for " + i.Name));
+        Assert.Equal("notes.txt", browser.SelectedItem?.Name);
+        Assert.Equal(new[] { "Desktop" }, browser.Crumbs.Select(c => c.Name));
+        Snap(main, "History-folders");
+
+        main.ViewModel.ShowHistory(set2, null);
+        Pump(1500);
+        history = (HistoryViewModel)main.ViewModel.Current;
+        browser = history.Browser;
+        Assert.True(history.BrowseFolders);                         // the choice sticks
+        Assert.Single(browser.Items);
+        Assert.True(browser.Items[0].IsFolder);
+        Assert.Equal("Invoices", browser.Items[0].Name);
+        Assert.Equal("1 file", browser.Items[0].Detail);
+        browser.Open(browser.Items[0].Folder!);
+        Pump(300);
+        Assert.Equal(new[] { "Documents", "Invoices" }, browser.Crumbs.Select(c => c.Name));
+        Assert.Equal("Invoice 2026-117.pdf", browser.Items.Single().Name);
+        Assert.True(browser.Up.CanExecute(null));
+        Assert.True(browser.Back.CanExecute(null));
+        browser.Back.Execute(null);
+        Assert.Equal("Documents", browser.Folder?.Name);
+        Assert.True(browser.Forward.CanExecute(null));
+        history.Search = "117";
+        Pump(300);
+        Assert.Equal("Invoice 2026-117.pdf", browser.Items.Single().Name); // search looks into subfolders
+        Assert.Equal("Invoices", browser.Items[0].Location);
+        history.Search = "";
+        history.BrowseFolders = false;
+        Pump(300);
+
         Step("drives");
         main.ViewModel.Navigate(Page.Drives);
         Pump(1500);
