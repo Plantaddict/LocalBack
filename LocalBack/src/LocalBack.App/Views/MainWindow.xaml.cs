@@ -15,8 +15,8 @@ public partial class MainWindow : Window
         StateChanged += (_, _) =>
         {
             // A maximised chrome-less window overhangs the screen by the resize border; pad it back in.
-            Frame.Margin = WindowState == WindowState.Maximized ? new Thickness(7) : new Thickness(0);
-            Frame.BorderThickness = WindowState == WindowState.Maximized ? new Thickness(0) : new Thickness(1);
+            RootFrame.Margin = WindowState == WindowState.Maximized ? new Thickness(7) : new Thickness(0);
+            RootFrame.BorderThickness = WindowState == WindowState.Maximized ? new Thickness(0) : new Thickness(1);
         };
         Closed += (_, _) => ViewModel.Dispose();
     }

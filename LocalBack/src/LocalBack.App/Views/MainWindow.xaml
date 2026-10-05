@@ -19,7 +19,7 @@
         <BooleanToVisibilityConverter x:Key="Vis"/>
     </Window.Resources>
 
-    <Border x:Name="Frame" BorderBrush="{StaticResource BorderStrong}" BorderThickness="1">
+    <Border x:Name="RootFrame" BorderBrush="{StaticResource BorderStrong}" BorderThickness="1">
         <DockPanel>
             <!-- Title bar -->
             <Border DockPanel.Dock="Top" Height="36" Background="{StaticResource Panel2}" BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1">

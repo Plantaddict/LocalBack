@@ -1,7 +1,7 @@
 # LocalBack — project brief
 
 **Date:** 5 October 2026
-**Status:** Design and architecture agreed; no code yet
+**Status:** Milestones 1–5 implemented; installer and perf pass open
 **Design:** five screens on the LocalBack canvas (Main, Version history, Tray flyout, Add backup set, Free up space)
 
 ## One line

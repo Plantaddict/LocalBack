@@ -63,7 +63,7 @@ public partial class App : Application
         _tray.BackUpNowRequested += () => _ = Service.BackUpNowAsync();
         _tray.RestoreRequested += () => OpenHistory(null);
         _tray.PauseToggleRequested += TogglePause;
-        _tray.ExitRequested += Exit;
+        _tray.ExitRequested += ExitApp;
 
         _devices = new DeviceNotifier();
         _devices.Arrived += roots => Task.Run(() => { foreach (var r in roots) Service.OnDriveArrived(r); });
@@ -181,7 +181,7 @@ public partial class App : Application
         else Service.Pause(TimeSpan.FromHours(1));
     }
 
-    public void Exit()
+    public void ExitApp()
     {
         _flyout?.Close();
         _main?.Close();

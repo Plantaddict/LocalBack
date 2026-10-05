@@ -4,12 +4,17 @@
 
 ```
 E:\LocalBack\
-  objects\ab\cdef0123...      one blob per unique file content, named by hash
+  drive.json                  id of this drive (matched with the volume serial, never the letter)
+  objects\ab\cdef0123...      one blob per unique file content, named by SHA-256
+  objects\tmp\                copies in progress; cleared at the start of every run
   sets\Desktop\
-    manifests\2026-10-05T14-32-11Z.json
-    manifests\2026-10-05T14-19-02Z.json
+    manifests\2026-10-05T14-32-11-123Z.json.gz
+    manifests\2026-10-05T14-19-02-845Z.json.gz
+    snapshots.jsonl           one summary line per snapshot (cache, rebuilt if stale)
     set.json                  name, source folders, exclusions, schedule
 ```
+
+Manifest names sort chronologically and never collide (a name is bumped by a millisecond if needed). Every file is written to a temp name and renamed, so an unplugged drive never leaves a half-written manifest or blob.
 
 A manifest lists every file in the set at that moment: relative path, hash, size, mtime, attributes. A snapshot is therefore just a manifest; unchanged files cost no extra space. Works on FAT32/exFAT because nothing relies on hard links or NTFS features.
 
@@ -17,9 +22,12 @@ Hashing: SHA-256 (or BLAKE3 if Rust). Hash only when size or mtime differs from 
 
 ## Local index (SQLite, on the PC)
 
-- `files(set, path, size, mtime, hash)` current state, for fast change detection.
-- `versions(set, path, hash, first_seen, last_seen)` for per-file history queries.
-- `pending(set, path)` paths queued while the drive is unplugged.
+- `files(set, root, path, size, mtime, attr, hash)` mirror of the newest manifest, for fast change detection.
+- `versions(set, root, path, hash, size, first_seen, superseded)` for per-file history queries.
+- `pending(set, path)` paths queued while the drive is unplugged, the app is paused, or the set is not on a live schedule.
+- `sets_state(set, last_manifest, last_run, last_full, last_error)`.
+
+The index is a cache. Before each run its `last_manifest` is compared with the newest manifest on the drive; if they differ (new PC, deleted index, another PC used the drive) the set's rows are rebuilt from the drive.
 
 ## Change detection
 
@@ -49,6 +57,12 @@ When free space drops below a threshold (or below the next run's estimate), show
 3. Drop versions older than X days.
 
 Pruning edits manifests (removes the dropped entries), then a GC pass deletes blobs no manifest references. Safe to interrupt. The newest version of every file is never removed. The preview is the same walk without the delete step.
+
+## Process model
+
+One background service (`BackupService`) owns the watchers, a schedule timer (armed for the next due time, not polling) and a single worker thread at background CPU and I/O priority. Watcher batches, plug-in events, the daily check and "Back up now" all go into one queue that coalesces work per set. Engine operations take one lock, so garbage collection never races a run that is adding blobs.
+
+The WPF app is a thin shell over that service. Windows are created when opened and dropped on close.
 
 ## Locked files (later)
 
