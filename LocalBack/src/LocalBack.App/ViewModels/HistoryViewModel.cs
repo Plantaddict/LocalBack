@@ -26,9 +26,14 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
     private bool _loading;
     private CancellationTokenSource? _loadCts;
     private string? _pendingFocusPath;
+    private FileKey? _pendingFocusKey;
     private int _snapshotsLoad;
     private bool _showDeleted;
     private List<SnapshotFile>? _deleted;
+    private bool _browse;
+    private SnapshotTree? _tree;
+    private SnapshotDetails? _treeOf;
+    private int _treeLoad;
 
     public ObservableCollection<BackupSet> Sets { get; } = new();
     public ObservableCollection<SnapshotItem> Snapshots { get; } = new();
@@ -38,6 +43,8 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
     public HistoryViewModel(MainViewModel main)
     {
         _main = main;
+        Browser = new FolderBrowserViewModel(this);
+        _browse = _app.Service.Settings.HistoryFolderView;
         Back = new RelayCommand(() => _main.Navigate(Page.Sets));
         RestoreEverything = new AsyncCommand(RestoreEverythingAsync, () => _details != null && !_loading);
         RestoreToFolder = new AsyncCommand(RestoreToFolderAsync, () => _details != null && !_loading);
@@ -55,6 +62,36 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
     private bool _showUnlock;
     public bool ShowUnlock { get => _showUnlock; private set => Set(ref _showUnlock, value); }
 
+    /// <summary>The Explorer-like view of the chosen snapshot.</summary>
+    public FolderBrowserViewModel Browser { get; }
+
+    /// <summary>"Folders" view (browse the snapshot like a drive) instead of the flat list of changes. Remembered in settings.</summary>
+    public bool BrowseFolders
+    {
+        get => _browse;
+        set
+        {
+            if (!Set(ref _browse, value)) return;
+            _app.Service.SaveSettings(s => s.HistoryFolderView = value);
+            RaiseViewMode();
+            if (!value) return;
+            Browser.Search = _search;
+            _ = EnsureTreeAsync();
+        }
+    }
+
+    public bool ShowBrowser => BrowseFolders && !ShowDeleted;
+    public bool ShowList => !ShowBrowser;
+
+    private void RaiseViewMode()
+    {
+        Raise(nameof(ShowBrowser));
+        Raise(nameof(ShowList));
+        Raise(nameof(FooterText));
+    }
+
+    public string SetName => _set?.Name ?? "";
+
     public BackupSet? SelectedSet
     {
         get => _set;
@@ -63,6 +100,7 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
             if (value == null || ReferenceEquals(value, _set)) return;
             _set = value;
             ClearSearch();
+            Browser.ForgetPlace();
             Raise();
             _ = LoadSnapshotsAsync();
         }
@@ -86,7 +124,12 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
     public string Search
     {
         get => _search;
-        set { if (Set(ref _search, value)) ApplyFilter(); }
+        set
+        {
+            if (!Set(ref _search, value)) return;
+            ApplyFilter();
+            Browser.Search = _search;
+        }
     }
 
     public bool OnlyChanged
@@ -103,6 +146,7 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         {
             if (!Set(ref _showDeleted, value)) return;
             RaiseHeader();
+            RaiseViewMode();
             if (value) _ = LoadDeletedAsync();
             else { _deleted = null; ApplyFilter(); }
         }
@@ -124,7 +168,7 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         : _snapshot == null || _details == null ? (_snapshot?.Meta ?? "")
         : $"{_snapshot.Meta} · {Format.Plural(_details.Info.Files, "file", "files")} · {Format.Size(_details.Info.Bytes)}";
 
-    public string FooterText => Status.Length > 0 ? Status : Loc.T("history.footer");
+    public string FooterText => Status.Length > 0 ? Status : Loc.T(ShowBrowser ? "browse.footer" : "history.footer");
 
     public string SourceText => _set != null && _app.Service.DriveFor(_set) is { } d
         ? Loc.T("history.source", System.IO.Path.Combine(d.Root, "sets", _set.Id)) : "";
@@ -177,6 +221,7 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         if (_search.Length == 0) return;
         _search = "";
         Raise(nameof(Search));
+        Browser.Search = "";
     }
 
     /// <summary>Opens a set (and optionally a file from the Explorer menu).</summary>
@@ -194,6 +239,7 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
             }
             set = found.Value.Set;
             _pendingFocusPath = found.Value.Key.Path;
+            _pendingFocusKey = found.Value.Key;
         }
         set = set == null ? Sets.FirstOrDefault() : Sets.FirstOrDefault(s => s.Id == set.Id);
         if (set == null)
@@ -276,6 +322,9 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         var snap = _snapshot;
         Files = new ObservableCollection<FileRowViewModel>();
         _details = null;
+        _tree = null;
+        _treeOf = null;
+        Browser.SetTree(null);
         if (set == null || snap == null) return;
         Loading = true;
         try
@@ -283,17 +332,25 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
             var details = await Task.Run(() => _app.Service.Engine.LoadSnapshot(set, snap.Info.Name), cts.Token);
             if (cts.IsCancellationRequested) return;
             _details = details;
-            if (_pendingFocusPath != null)
+            var focus = _pendingFocusKey;
+            _pendingFocusKey = null;
+            if (_pendingFocusPath != null && !BrowseFolders)
             {
                 // Coming from Explorer: show that file, whether or not it changed in this snapshot.
                 _onlyChanged = false;
                 _search = _pendingFocusPath;
-                _pendingFocusPath = null;
                 Raise(nameof(OnlyChanged));
                 Raise(nameof(Search));
             }
+            _pendingFocusPath = null;
             ApplyFilter();
             RaiseHeader();
+            if (BrowseFolders)
+            {
+                await EnsureTreeAsync();
+                // In the Folders view, open the file's folder and select it instead of searching.
+                if (focus is { } key && ReferenceEquals(_details, details)) Browser.Reveal(key);
+            }
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DriveNotAvailableException or DriveLockedException or System.Security.Cryptography.CryptographicException)
@@ -305,6 +362,24 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
             if (!cts.IsCancellationRequested) Loading = false;
             CommandManager.InvalidateRequerySuggested();
         }
+    }
+
+    /// <summary>Builds the folder tree of the loaded snapshot once, when the Folders view needs it.</summary>
+    private async Task EnsureTreeAsync()
+    {
+        var details = _details;
+        if (details == null) return;
+        if (_tree != null && ReferenceEquals(_treeOf, details))
+        {
+            if (!Browser.HasTree) Browser.SetTree(_tree);
+            return;
+        }
+        int load = ++_treeLoad;
+        var tree = await Task.Run(() => SnapshotTree.Build(details));
+        if (load != _treeLoad || !ReferenceEquals(details, _details)) return;
+        _tree = tree;
+        _treeOf = details;
+        Browser.SetTree(tree);
     }
 
     private async Task LoadDeletedAsync()
@@ -398,6 +473,69 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         var keep = Status;
         await LoadSnapshotsAsync(keepSelection: true);
         Status = keep;
+    }
+
+    /// <summary>
+    /// Restores what is selected in the Folders view: files and whole folders, in place (undoable) or copied
+    /// under a chosen folder, where they land the way Explorer would copy them (a folder keeps its name).
+    /// </summary>
+    internal async Task RestoreItemsAsync(IReadOnlyList<BrowseItemViewModel> items, bool toFolder)
+    {
+        if (_set == null || _snapshot == null || items.Count == 0) return;
+        var set = _set;
+        var label = _snapshot.Label;
+        var files = new List<(FileKey Key, ManifestEntry Entry)>();
+        foreach (var item in items)
+        {
+            if (item.File is { } f) files.Add((f.Key, f.Entry));
+            else if (item.Folder is { } d) files.AddRange(d.AllFiles().Select(x => (x.Key, x.Entry)));
+        }
+        if (files.Count == 0) return;
+        var what = items.Count == 1 ? items[0].Name : Format.Plural(items.Count, "item", "items");
+        if (!toFolder && (files.Count > 1 || items[0].IsFolder))
+        {
+            var where = Browser.Folder?.FullPath ?? set.Name;
+            if (!Ui.Confirm(Loc.T("browse.confirmRestore", Format.Plural(files.Count, "file", "files"), where, label), Loc.T("browse.confirmRestoreTitle"))) return;
+        }
+        string? target = null;
+        if (toFolder)
+        {
+            var dlg = new Microsoft.Win32.OpenFolderDialog { Title = Loc.T("browse.restoreItemsTo", what) };
+            if (dlg.ShowDialog() != true) return;
+            target = dlg.FolderName;
+            // Paths relative to the folder being browsed, so "Invoices" restored to D:\Out becomes D:\Out\Invoices\…
+            var baseFolder = Browser.Folder;
+            files = files.Select(x => (new FileKey(target, RelativeTo(baseFolder, x.Key)), x.Entry)).ToList();
+        }
+        Status = Loc.T("browse.restoringItems", what);
+        var r = await Task.Run(() => _app.Service.Engine.RestoreAsync(set, files, target));
+        var summary = files.Count == 1 && !toFolder
+            ? (r.Failed.Count > 0 ? Loc.T("history.restoreFailedFile", what) : r.Restored == 0 ? Loc.T("history.alreadyVersion", what) : Loc.T("history.restoredFile", what))
+            : Summary(r, target);
+        if (toFolder)
+        {
+            Status = summary;
+            if (r.Restored > 0) WindowsIntegration.OpenWithShell(target!);
+            return;
+        }
+        await LoadSnapshotsAsync(keepSelection: true);
+        Status = summary;
+    }
+
+    /// <summary>A file's path below the folder being browsed; below the set's top it keeps the source folder's name.</summary>
+    private static string RelativeTo(SnapshotFolder? folder, FileKey key)
+    {
+        if (folder == null) return key.Path;
+        var ancestry = folder.Ancestry;
+        if (ancestry.Count == 0)
+        {
+            // Browsing above the source folders: keep them apart by name.
+            var rootName = PathUtil.FileName(key.Root.Replace('\\', '/').TrimEnd('/'));
+            return (rootName.Length == 0 || rootName.EndsWith(':') ? PathUtil.Slug(key.Root) : rootName) + "/" + key.Path;
+        }
+        var prefix = string.Join('/', ancestry.Skip(1).Select(a => a.Name));
+        if (prefix.Length > 0 && key.Path.StartsWith(prefix + "/", PathUtil.Comparison)) return key.Path[(prefix.Length + 1)..];
+        return key.Path;
     }
 
     internal async Task OpenFileAsync(SnapshotFile file)

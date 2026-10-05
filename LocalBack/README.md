@@ -38,6 +38,7 @@ The real app, rendered on Windows by the UI test (`docs/screenshots/`, refreshed
 | ![Add backup set](docs/screenshots/AddSet.png) | ![Free up space](docs/screenshots/FreeSpace.png) |
 | ![Tray flyout](docs/screenshots/Tray.png) | ![Settings](docs/screenshots/Settings.png) |
 | ![Deleted files](docs/screenshots/History-deleted.png) | ![Unlock](docs/screenshots/Unlock.png) |
+| ![Browsing a snapshot by folder](docs/screenshots/History-folders.png) | |
 | ![Main window in Polish](docs/screenshots/Main-pl.png) | ![Add backup set in Polish](docs/screenshots/AddSet-pl.png) |
 
 ## Stack
@@ -138,6 +139,7 @@ Commands that write (`add`, `backup`, `restore`, `prune`, `remove`, `watch`) nee
 - **Auto-prune is a standing policy** (Settings → Version retention), answering the first open question in the brief.
 - **On battery**, live changes are batched to at most one run every 15 minutes (Settings, on by default).
 - **Trimming is off**: WPF does not support it. The build is self-contained, single-file, ReadyToRun and compressed instead.
+- **Version history has two views of a snapshot.** *Changes* lists what the snapshot added, modified or deleted. *Folders* browses it like a drive in Explorer: address bar with back/forward/up, a details list with the shell's own icons and type names, double-click to open a folder or a read-only copy of a file, right-click to restore files or whole folders in place or to another folder. Search in the Folders view looks through the current folder and everything below it. The choice is remembered.
 - **Encryption is chosen when a destination is first used.** A random data key encrypts files and snapshot lists; the password only wraps that key (PBKDF2-SHA256, 600 000 rounds), so changing the password is instant and there is no way to recover a lost one. `set.json` and the snapshot summary list (`snapshots.jsonl`: dates and counts) stay in clear so a destination can be recognised and listed without the password; file names and contents do not.
 - **The key stays on the PC** (`keys.json`, protected with DPAPI for the signed-in user) so live backups run unattended. Another PC asks for the password; "Forget password on this PC" in a set's menu removes the saved key.
 - **Network shares** get no plug-in event, so a share that is away is tried again every few minutes.

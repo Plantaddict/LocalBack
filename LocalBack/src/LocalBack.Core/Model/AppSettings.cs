@@ -29,4 +29,7 @@ public sealed class AppSettings
     public bool StartWithWindows { get; set; } = true;
     public bool ExplorerMenu { get; set; } = true;
     public bool ThrottleOnBattery { get; set; } = true;
+
+    /// <summary>Version history opens in the Folders (Explorer-like) view instead of the list of changes.</summary>
+    public bool HistoryFolderView { get; set; }
 }
