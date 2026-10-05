@@ -62,6 +62,7 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         {
             if (value == null || ReferenceEquals(value, _set)) return;
             _set = value;
+            ClearSearch();
             Raise();
             _ = LoadSnapshotsAsync();
         }
@@ -170,10 +171,19 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         Raise(nameof(SelectedSet));
     }
 
+    /// <summary>A search typed (or set by the Explorer menu) for one set must not filter the next one.</summary>
+    private void ClearSearch()
+    {
+        if (_search.Length == 0) return;
+        _search = "";
+        Raise(nameof(Search));
+    }
+
     /// <summary>Opens a set (and optionally a file from the Explorer menu).</summary>
     public void Show(BackupSet? set, string? path)
     {
         RefreshSets();
+        if (path == null) ClearSearch();
         if (path != null)
         {
             var found = BackupEngine.Locate(_app.Service.Sets, path);
