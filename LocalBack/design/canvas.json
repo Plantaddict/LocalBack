@@ -1,0 +1,76 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-05T12:00:00Z"
+  },
+  "title": "LocalBack \u2014 UI Mockups",
+  "launch": {
+    "view": "canvas"
+  },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 900,
+      "h": 600,
+      "title": "Main window \u2014 Backup sets",
+      "is_interactive": true,
+      "radius": 8
+    },
+    "History.dc.html": {
+      "x": 980,
+      "y": 0,
+      "w": 900,
+      "h": 600,
+      "title": "Version history / Restore",
+      "is_interactive": true,
+      "radius": 8
+    },
+    "Tray.dc.html": {
+      "x": 0,
+      "y": 720,
+      "w": 360,
+      "h": 440,
+      "title": "Tray flyout",
+      "is_interactive": true,
+      "radius": 10
+    },
+    "AddSet.dc.html": {
+      "x": 440,
+      "y": 720,
+      "w": 520,
+      "h": 800,
+      "title": "Add backup set (dialog)",
+      "is_interactive": true,
+      "radius": 10
+    },
+    "FreeSpace.dc.html": {
+      "x": 1040,
+      "y": 720,
+      "w": 520,
+      "h": 600,
+      "title": "Free up space (dialog)",
+      "is_interactive": true,
+      "radius": 10
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "History.dc.html",
+    "Tray.dc.html",
+    "AddSet.dc.html",
+    "FreeSpace.dc.html"
+  ],
+  "notes": {
+    "t1": {
+      "x": 0,
+      "y": -300,
+      "text": "LocalBack \u2014 screens",
+      "kind": "title1",
+      "maxW": 1880
+    }
+  },
+  "designSystems": []
+}

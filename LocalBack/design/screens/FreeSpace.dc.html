@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Free up space dialog</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#0F5FBF}a:hover{color:#0B4A95}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;border-radius:6px;font:inherit;font-size:14px;font-weight:600;line-height:1;text-decoration:none;cursor:pointer;box-sizing:border-box;white-space:nowrap;transition:background .12s,box-shadow .12s,transform .06s}
+.btn:hover{text-decoration:none}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid #0F5FBF;outline-offset:2px}
+.btn-primary{color:#fff;border:1px solid rgba(0,0,0,.14);box-shadow:inset 0 -1px 0 rgba(0,0,0,.22),0 1px 2px rgba(0,0,0,.10)}
+.btn-primary:hover{filter:brightness(.93)}
+.btn-secondary{background:#fff;border:1px solid #D1D1D1;border-bottom-color:#B4B4B4;color:#1B1B1B;font-weight:500;box-shadow:0 1px 1px rgba(0,0,0,.04)}
+.btn-secondary:hover{background:#F6F6F6}
+.btn-outline{background:#fff;border:1px solid currentColor;font-weight:600}
+.btn-outline:hover{background:#EEF4FC}
+.btn-ghost{background:transparent;border:1px solid transparent;color:#1B1B1B;font-weight:500;padding:0 10px}
+.btn-ghost:hover{background:#ECECEC}
+.btn-sm{height:32px;padding:0 12px;font-size:13px}
+.btn-icon{width:32px;height:32px;padding:0;color:#5C5C5C}
+.caption{display:inline-flex;align-items:center;justify-content:center;width:46px;height:36px;border:none;background:transparent;color:#1B1B1B;cursor:pointer;padding:0}
+.caption:hover{background:#E6E6E6}
+.caption-close:hover{background:#C42B1C;color:#fff}
+.nav-item{display:flex;align-items:center;gap:10px;height:40px;padding:0 12px;border-radius:6px;color:#1B1B1B;text-decoration:none;font-weight:500}
+.nav-item:hover{background:#ECECEC;color:#1B1B1B}
+.nav-item-active{background:#E6EEF9;font-weight:600;box-shadow:inset 3px 0 0 #0F5FBF}
+.nav-item-active:hover{background:#E6EEF9}
+</style>
+</helmet>
+<div style="width: 520px; height: 600px; box-sizing: border-box; display: flex; flex-direction: column; gap: 16px; padding: 24px; background: #FFFFFF; border: 1px solid #C8C8C8; border-radius: 10px; font-family: 'Segoe UI', system-ui, sans-serif; color: #1B1B1B; font-size: 14px">
+
+  <div style="display: flex; gap: 12px; align-items: flex-start">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#B85C00" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l10 18H2z"></path><path d="M12 10v4M12 17h.01"></path></svg>
+    <div>
+      <h1 style="margin: 0; font-size: 20px; font-weight: 600">E: Samsung T7 is almost full</h1>
+      <p style="margin: 4px 0 0; color: #4A4A4A; font-size: 13px">18 GB free of 1 TB. The next backup needs about 6 GB. Old copies of files you have changed many times take most of the space.</p>
+    </div>
+  </div>
+
+  <div style="height: 8px; background: #E3E3E3; border-radius: 4px; overflow: hidden; display: flex">
+    <div style="width: 61%; height: 8px; background: {{accent}}"></div>
+    <div style="width: 37%; height: 8px; background: #B85C00"></div>
+  </div>
+  <div style="display: flex; gap: 18px; font-size: 12px; color: #4A4A4A; margin-top: -8px">
+    <span style="display: flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; border-radius: 2px; background: {{accent}}"></span>Current files 612 GB</span>
+    <span style="display: flex; align-items: center; gap: 6px"><span style="width: 10px; height: 10px; border-radius: 2px; background: #B85C00"></span>Older versions 370 GB</span>
+  </div>
+
+  <fieldset style="border: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px">
+    <legend style="font-size: 13px; font-weight: 600; padding: 0; margin-bottom: 4px">Choose what to remove</legend>
+    <sc-for list="{{opts}}" as="o" hint-placeholder-count="3">
+      <label style="display: grid; grid-template-columns: 20px minmax(0, 1fr) 80px; gap: 12px; align-items: start; padding: 12px 14px; border: 1px solid {{o.border}}; border-radius: 8px; background: {{o.bg}}; cursor: pointer">
+        <input type="radio" name="plan" onChange="{{o.pick}}" checked="{{o.checked}}" style="margin: 3px 0 0">
+        <span style="display: flex; flex-direction: column; gap: 2px">
+          <span style="font-weight: 600">{{o.title}}</span>
+          <span style="font-size: 12px; color: #4A4A4A">{{o.desc}}</span>
+        </span>
+        <span style="font-weight: 600; text-align: right; color: #1F7A4D">{{o.frees}}</span>
+      </label>
+    </sc-for>
+  </fieldset>
+
+  <div style="font-size: 12px; color: #4A4A4A; display: flex; flex-direction: column; gap: 4px">
+    <span>The newest version of every file is always kept. Nothing on your PC is touched.</span>
+    <span>Biggest offenders: Quarterly report.xlsx (84 versions, 9.1 GB), video-edit.prproj (31 versions, 7.4 GB).</span>
+  </div>
+
+  <div style="margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: 8px">
+    <label style="display: flex; align-items: center; gap: 8px; font-size: 13px"><input type="checkbox" checked>Do this automatically when space is low</label>
+    <div style="display: flex; gap: 8px">
+      <a href="Main.dc.html" class="btn btn-secondary">Not now</a>
+      <a href="Main.dc.html" class="btn btn-primary" style="background: {{accent}}">Free up {{picked.frees}}</a>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#0F5FBF","options":["#0F5FBF","#1F7A4D","#7A3E9D"]},"$preview":{"width":520,"height":600}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { picked: 1 }; }
+  renderVals() {
+    const base = [
+      { title: 'Keep only the last 3 versions of each file', desc: 'Older copies of the same file are removed. Good if you rarely go back more than a few saves.', frees: '245 GB' },
+      { title: 'Keep 1 version per day for 30 days, then 1 per week', desc: 'Thins out the many copies made on the same day. Keeps a long trail of changes.', frees: '188 GB' },
+      { title: 'Remove versions older than 90 days', desc: 'Everything from the last three months stays exactly as it is.', frees: '96 GB' }
+    ];
+    const opts = base.map((o, i) => ({
+      ...o,
+      checked: i === this.state.picked,
+      border: i === this.state.picked ? '#0F5FBF' : '#E3E3E3',
+      bg: i === this.state.picked ? '#E6EEF9' : '#FFFFFF',
+      pick: () => this.setState({ picked: i })
+    }));
+    return { accent: this.props.accent ?? '#0F5FBF', opts, picked: base[this.state.picked] };
+  }
+}
+</script>
+</body>
+</html>

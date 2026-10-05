@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Main window — Backup sets</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#0F5FBF}a:hover{color:#0B4A95}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;border-radius:6px;font:inherit;font-size:14px;font-weight:600;line-height:1;text-decoration:none;cursor:pointer;box-sizing:border-box;white-space:nowrap;transition:background .12s,box-shadow .12s,transform .06s}
+.btn:hover{text-decoration:none}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid #0F5FBF;outline-offset:2px}
+.btn-primary{color:#fff;border:1px solid rgba(0,0,0,.14);box-shadow:inset 0 -1px 0 rgba(0,0,0,.22),0 1px 2px rgba(0,0,0,.10)}
+.btn-primary:hover{filter:brightness(.93)}
+.btn-secondary{background:#fff;border:1px solid #D1D1D1;border-bottom-color:#B4B4B4;color:#1B1B1B;font-weight:500;box-shadow:0 1px 1px rgba(0,0,0,.04)}
+.btn-secondary:hover{background:#F6F6F6}
+.btn-outline{background:#fff;border:1px solid currentColor;font-weight:600}
+.btn-outline:hover{background:#EEF4FC}
+.btn-ghost{background:transparent;border:1px solid transparent;color:#1B1B1B;font-weight:500;padding:0 10px}
+.btn-ghost:hover{background:#ECECEC}
+.btn-sm{height:32px;padding:0 12px;font-size:13px}
+.btn-icon{width:32px;height:32px;padding:0;color:#5C5C5C}
+.caption{display:inline-flex;align-items:center;justify-content:center;width:46px;height:36px;border:none;background:transparent;color:#1B1B1B;cursor:pointer;padding:0}
+.caption:hover{background:#E6E6E6}
+.caption-close:hover{background:#C42B1C;color:#fff}
+.nav-item{display:flex;align-items:center;gap:10px;height:40px;padding:0 12px;border-radius:6px;color:#1B1B1B;text-decoration:none;font-weight:500}
+.nav-item:hover{background:#ECECEC;color:#1B1B1B}
+.nav-item-active{background:#E6EEF9;font-weight:600;box-shadow:inset 3px 0 0 #0F5FBF}
+.nav-item-active:hover{background:#E6EEF9}
+</style>
+</helmet>
+<div style="width: 900px; height: 600px; box-sizing: border-box; display: flex; flex-direction: column; background: #FFFFFF; border: 1px solid #C8C8C8; border-radius: 8px; overflow: hidden; font-family: 'Segoe UI', system-ui, sans-serif; color: #1B1B1B; font-size: 14px">
+
+  <div style="height: 36px; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; background: #F3F3F3; border-bottom: 1px solid #E3E3E3">
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 12px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"></rect><path d="M7 20h10M12 8v6M9 11l3 3 3-3"></path></svg>
+      <span>LocalBack</span>
+    </div>
+    <div style="display: flex; margin-right: -12px">
+      <button type="button" class="caption" aria-label="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" stroke="currentColor" stroke-width="1"></path></svg></button>
+      <button type="button" class="caption" aria-label="Maximize"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><rect x=".5" y=".5" width="9" height="9" stroke="currentColor" stroke-width="1"></rect></svg></button>
+      <button type="button" class="caption caption-close" aria-label="Close"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" stroke-width="1"></path></svg></button>
+    </div>
+  </div>
+
+  <div style="flex: 1; display: flex; min-height: 0">
+    <nav aria-label="Sections" style="width: 196px; background: #F8F8F8; border-right: 1px solid #E3E3E3; padding: 12px 8px; display: flex; flex-direction: column; gap: 2px">
+      <a href="Main.dc.html" class="nav-item nav-item-active">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+        Backup sets
+      </a>
+      <a href="History.dc.html" class="nav-item">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+        Version history
+      </a>
+      <a href="Main.dc.html" class="nav-item">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="7" width="20" height="10" rx="2"></rect><circle cx="17" cy="12" r="1.5"></circle><path d="M6 12h6"></path></svg>
+        Drives
+      </a>
+      <a href="Main.dc.html" class="nav-item">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg>
+        Settings
+      </a>
+      <div style="flex: 1"></div>
+      <div style="padding: 12px; border-top: 1px solid #E3E3E3; font-size: 12px; color: #4A4A4A; display: flex; flex-direction: column; gap: 6px">
+        <div style="display: flex; justify-content: space-between"><span>Backup drive</span><span style="font-weight: 600; color: #1B1B1B">E: Samsung T7</span></div>
+        <div style="height: 6px; background: #E3E3E3; border-radius: 3px; overflow: hidden"><div style="width: 38%; height: 6px; background: {{accent}}"></div></div>
+        <div>362 GB free of 1 TB</div>
+      </div>
+    </nav>
+
+    <main style="flex: 1; padding: 24px 28px; display: flex; flex-direction: column; gap: 18px; min-width: 0">
+      <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 16px">
+        <div>
+          <h1 style="margin: 0; font-size: 22px; font-weight: 600">Backup sets</h1>
+          <p style="margin: 4px 0 0; color: #4A4A4A">All sets are up to date. Last change saved 14:32 today.</p>
+        </div>
+        <div style="display: flex; gap: 8px">
+          <button type="button" class="btn btn-secondary"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Add set</button>
+          <button type="button" class="btn btn-primary" style="background: {{accent}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M8 11l4 4 4-4"></path><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path></svg>Back up all now</button>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <sc-for list="{{sets}}" as="s" hint-placeholder-count="3">
+          <div style="display: grid; grid-template-columns: 40px minmax(0, 1fr) 140px 120px 150px; align-items: center; gap: 14px; padding: 14px 16px; border: 1px solid #E3E3E3; border-radius: 8px; background: #FFFFFF">
+            <div style="width: 40px; height: 40px; border-radius: 8px; background: #E6EEF9; display: flex; align-items: center; justify-content: center">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="{{accent}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+            </div>
+            <div style="min-width: 0">
+              <div style="font-weight: 600">{{s.name}}</div>
+              <div style="font-size: 12px; color: #4A4A4A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{s.path}}</div>
+            </div>
+            <div style="font-size: 12px; color: #4A4A4A">
+              <div style="display: flex; align-items: center; gap: 6px"><span style="width: 8px; height: 8px; border-radius: 4px; background: {{s.dot}}"></span><span style="color: #1B1B1B">{{s.status}}</span></div>
+              <div>{{s.when}}</div>
+            </div>
+            <div style="font-size: 12px; color: #4A4A4A">
+              <div style="color: #1B1B1B">{{s.size}}</div>
+              <div>{{s.versions}}</div>
+            </div>
+            <div style="display: flex; gap: 6px; justify-content: flex-end">
+              <button type="button" class="btn btn-secondary btn-sm">Back up</button>
+              <a href="History.dc.html" class="btn btn-outline btn-sm" style="color: {{accent}}">Restore</a>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+
+      <div style="margin-top: auto; display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #F3F3F3; border-radius: 8px; font-size: 13px; color: #4A4A4A">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4M12 16h.01"></path></svg>
+        <span>Watching folders live: changed files are backed up within seconds of saving. Full check daily at 18:00 and whenever drive E: is plugged in.</span>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#0F5FBF","options":["#0F5FBF","#1F7A4D","#7A3E9D"]},"$preview":{"width":900,"height":600}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      accent: this.props.accent ?? '#0F5FBF',
+      sets: [
+        { name: 'Desktop', path: 'C:\\Users\\You\\Desktop', status: 'Up to date', when: '14:32 today', size: '2.1 GB', versions: '18 versions', dot: '#1F7A4D' },
+        { name: 'Documents', path: 'C:\\Users\\You\\Documents', status: 'Up to date', when: '14:32 today', size: '11.4 GB', versions: '42 versions', dot: '#1F7A4D' },
+        { name: 'Projects', path: 'D:\\Work\\Projects', status: 'Changes pending', when: '3 files changed', size: '27.0 GB', versions: '9 versions', dot: '#B85C00' }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Add backup set dialog</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:#0F5FBF}a:hover{color:#0B4A95}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 16px;border-radius:6px;font:inherit;font-size:14px;font-weight:600;line-height:1;text-decoration:none;cursor:pointer;box-sizing:border-box;white-space:nowrap;transition:background .12s,box-shadow .12s,transform .06s}
+.btn:hover{text-decoration:none}
+.btn:active{transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid #0F5FBF;outline-offset:2px}
+.btn-primary{color:#fff;border:1px solid rgba(0,0,0,.14);box-shadow:inset 0 -1px 0 rgba(0,0,0,.22),0 1px 2px rgba(0,0,0,.10)}
+.btn-primary:hover{filter:brightness(.93)}
+.btn-secondary{background:#fff;border:1px solid #D1D1D1;border-bottom-color:#B4B4B4;color:#1B1B1B;font-weight:500;box-shadow:0 1px 1px rgba(0,0,0,.04)}
+.btn-secondary:hover{background:#F6F6F6}
+.btn-outline{background:#fff;border:1px solid currentColor;font-weight:600}
+.btn-outline:hover{background:#EEF4FC}
+.btn-ghost{background:transparent;border:1px solid transparent;color:#1B1B1B;font-weight:500;padding:0 10px}
+.btn-ghost:hover{background:#ECECEC}
+.btn-sm{height:32px;padding:0 12px;font-size:13px}
+.btn-icon{width:32px;height:32px;padding:0;color:#5C5C5C}
+.caption{display:inline-flex;align-items:center;justify-content:center;width:46px;height:36px;border:none;background:transparent;color:#1B1B1B;cursor:pointer;padding:0}
+.caption:hover{background:#E6E6E6}
+.caption-close:hover{background:#C42B1C;color:#fff}
+.nav-item{display:flex;align-items:center;gap:10px;height:40px;padding:0 12px;border-radius:6px;color:#1B1B1B;text-decoration:none;font-weight:500}
+.nav-item:hover{background:#ECECEC;color:#1B1B1B}
+.nav-item-active{background:#E6EEF9;font-weight:600;box-shadow:inset 3px 0 0 #0F5FBF}
+.nav-item-active:hover{background:#E6EEF9}
+</style>
+</helmet>
+<div style="width: 520px; height: 800px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px; padding: 24px; background: #FFFFFF; border: 1px solid #C8C8C8; border-radius: 10px; font-family: 'Segoe UI', system-ui, sans-serif; color: #1B1B1B; font-size: 14px">
+
+  <div>
+    <h1 style="margin: 0; font-size: 20px; font-weight: 600">Add backup set</h1>
+    <p style="margin: 4px 0 0; color: #4A4A4A; font-size: 13px">Pick the folders to protect and where to keep them.</p>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px">
+    <label for="name" style="font-size: 13px; font-weight: 600">Name</label>
+    <input id="name" type="text" value="Desktop" style="height: 34px; border: 1px solid #C8C8C8; border-radius: 6px; padding: 0 10px; font: inherit">
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 6px">
+    <span style="font-size: 13px; font-weight: 600">Folders</span>
+    <div style="border: 1px solid #C8C8C8; border-radius: 6px; overflow: hidden">
+      <sc-for list="{{folders}}" as="f" hint-placeholder-count="2">
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 4px 10px; border-bottom: 1px solid #EFEFEF; font-size: 13px">
+          <span style="display: flex; align-items: center; gap: 8px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4A4A4A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>{{f.path}}</span>
+          <button type="button" class="btn btn-ghost btn-icon" aria-label="Remove folder"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+        </div>
+      </sc-for>
+      <button type="button" class="btn btn-ghost" style="width: 100%; justify-content: flex-start; border-radius: 0; background: #F8F8F8; color: {{accent}}; font-weight: 600; font-size: 13px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>Add folder…</button>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <label for="drive" style="font-size: 13px; font-weight: 600">Backup drive</label>
+      <select id="drive" style="height: 34px; border: 1px solid #C8C8C8; border-radius: 6px; padding: 0 8px; font: inherit; background: #FFFFFF">
+        <option>E: Samsung T7 (362 GB free)</option>
+        <option>F: SanDisk Ultra (29 GB free)</option>
+      </select>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <label for="sched" style="font-size: 13px; font-weight: 600">Run</label>
+      <select id="sched" style="height: 34px; border: 1px solid #C8C8C8; border-radius: 6px; padding: 0 8px; font: inherit; background: #FFFFFF">
+        <option>When files change (live)</option>
+        <option>Every hour</option>
+        <option>Daily at 18:00</option>
+        <option>When the drive is plugged in</option>
+      </select>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <div style="display: flex; align-items: baseline; justify-content: space-between">
+      <span style="font-size: 13px; font-weight: 600">Exclude</span>
+      <span style="font-size: 12px; color: #4A4A4A">{{count}} rules on · files still being written are picked up next pass</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px">
+      <sc-for list="{{rules}}" as="r" hint-placeholder-count="8">
+        <button type="button" onClick="{{r.toggle}}" aria-pressed="{{r.on}}" style="display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border: 1px solid {{r.border}}; border-radius: 6px; background: {{r.bg}}; font: inherit; font-size: 13px; text-align: left; cursor: pointer; color: #1B1B1B">
+          <span style="width: 18px; height: 18px; border-radius: 4px; border: 1px solid {{r.boxBorder}}; background: {{r.boxBg}}; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0">
+            <sc-if value="{{r.on}}" hint-placeholder-val="{{true}}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"></path></svg></sc-if>
+          </span>
+          <span style="display: flex; flex-direction: column; gap: 1px; min-width: 0">
+            <span style="font-weight: 500">{{r.title}}</span>
+            <span style="font-size: 11px; color: #4A4A4A; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{r.patterns}}</span>
+          </span>
+        </button>
+      </sc-for>
+    </div>
+    <div style="display: flex; gap: 6px">
+      <label for="custom" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Custom pattern</label>
+      <input id="custom" type="text" placeholder="Custom pattern, e.g. *.iso or Renders/" style="flex: 1; height: 34px; border: 1px solid #C8C8C8; border-radius: 6px; padding: 0 10px; font: inherit; font-size: 13px">
+      <button type="button" class="btn btn-secondary btn-sm" style="height: 34px">Add</button>
+    </div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px">
+    <label style="display: flex; align-items: center; gap: 8px"><input type="checkbox" checked>Keep version history (older copies of changed files)</label>
+  </div>
+
+  <div style="margin-top: auto; display: flex; justify-content: flex-end; gap: 8px">
+    <a href="Main.dc.html" class="btn btn-secondary">Cancel</a>
+    <a href="Main.dc.html" class="btn btn-primary" style="background: {{accent}}">Create and back up</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#0F5FBF","options":["#0F5FBF","#1F7A4D","#7A3E9D"]},"$preview":{"width":520,"height":800}}'>
+class Component extends DCLogic {
+  constructor(p) { super(p); this.state = { off: { large: true, media: true } }; }
+  renderVals() {
+    const defs = [
+      { id: 'temp', title: 'Temporary files', patterns: '*.tmp, *.temp, *.bak, *~' },
+      { id: 'lock', title: 'Office lock files', patterns: '~$*, .~lock.*' },
+      { id: 'dl', title: 'Downloads in progress', patterns: '*.crdownload, *.part, *.partial' },
+      { id: 'sys', title: 'Windows system files', patterns: 'Thumbs.db, desktop.ini, $RECYCLE.BIN' },
+      { id: 'dev', title: 'Developer folders', patterns: 'node_modules/, .git/, bin/, obj/' },
+      { id: 'cache', title: 'Caches', patterns: '.cache/, __pycache__/, *.log' },
+      { id: 'large', title: 'Files over 2 GB', patterns: 'size > 2 GB' },
+      { id: 'media', title: 'Raw video and disk images', patterns: '*.iso, *.vmdk, *.mov, *.mkv' }
+    ];
+    const off = this.state.off;
+    const rules = defs.map((d) => {
+      const on = !off[d.id];
+      return { ...d, on, border: on ? '#B9CDEB' : '#E3E3E3', bg: on ? '#F1F6FD' : '#FFFFFF', boxBorder: on ? '#0F5FBF' : '#B4B4B4', boxBg: on ? '#0F5FBF' : '#FFFFFF',
+        toggle: () => this.setState({ off: { ...off, [d.id]: on } }) };
+    });
+    return {
+      accent: this.props.accent ?? '#0F5FBF',
+      count: rules.filter((r) => r.on).length,
+      rules,
+      folders: [{ path: 'C:\\Users\\You\\Desktop' }, { path: 'C:\\Users\\You\\Documents\\Invoices' }]
+    };
+  }
+}
+</script>
+</body>
+</html>
