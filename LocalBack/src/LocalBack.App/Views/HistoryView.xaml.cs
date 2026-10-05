@@ -58,6 +58,6 @@ public partial class HistoryView : UserControl
     private void FolderList_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         double others = ModifiedColumn.Width + TypeColumn.Width + SizeColumn.Width + ChangeColumn.Width;
-        NameColumn.Width = Math.Max(180, FolderList.ActualWidth - others - 30);
+        NameColumn.Width = Math.Max(150, FolderList.ActualWidth - others - 30);
     }
 }

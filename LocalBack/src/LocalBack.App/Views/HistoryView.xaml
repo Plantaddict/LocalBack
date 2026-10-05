@@ -292,6 +292,7 @@
                             <Style TargetType="ListViewItem">
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                                 <Setter Property="Padding" Value="4,3"/>
+                                <Setter Property="Foreground" Value="{StaticResource Text}"/>
                                 <Setter Property="ToolTip" Value="{Binding Tooltip}"/>
                                 <EventSetter Event="MouseDoubleClick" Handler="FolderItem_DoubleClick"/>
                             </Style>
@@ -326,17 +327,17 @@
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
-                                <GridViewColumn x:Name="ModifiedColumn" Width="130" DisplayMemberBinding="{Binding Modified}">
+                                <GridViewColumn x:Name="ModifiedColumn" Width="116" DisplayMemberBinding="{Binding Modified}">
                                     <GridViewColumn.Header>
                                         <GridViewColumnHeader Content="{l:T browse.col.modified}" Tag="Modified" HorizontalContentAlignment="Left" Padding="8,4"/>
                                     </GridViewColumn.Header>
                                 </GridViewColumn>
-                                <GridViewColumn x:Name="TypeColumn" Width="130" DisplayMemberBinding="{Binding TypeName}">
+                                <GridViewColumn x:Name="TypeColumn" Width="118" DisplayMemberBinding="{Binding TypeName}">
                                     <GridViewColumn.Header>
                                         <GridViewColumnHeader Content="{l:T browse.col.type}" Tag="Type" HorizontalContentAlignment="Left" Padding="8,4"/>
                                     </GridViewColumn.Header>
                                 </GridViewColumn>
-                                <GridViewColumn x:Name="SizeColumn" Width="84">
+                                <GridViewColumn x:Name="SizeColumn" Width="74">
                                     <GridViewColumn.Header>
                                         <GridViewColumnHeader Content="{l:T browse.col.size}" Tag="Size" HorizontalContentAlignment="Right" Padding="8,4"/>
                                     </GridViewColumn.Header>
@@ -346,7 +347,7 @@
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
-                                <GridViewColumn x:Name="ChangeColumn" Width="96">
+                                <GridViewColumn x:Name="ChangeColumn" Width="84">
                                     <GridViewColumn.Header>
                                         <GridViewColumnHeader Content="{l:T browse.col.change}" Tag="Change" HorizontalContentAlignment="Left" Padding="8,4"/>
                                     </GridViewColumn.Header>
