@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using LocalBack.Core.Crypto;
 using LocalBack.Core.Util;
 
 namespace LocalBack.Core.Storage;
@@ -11,6 +12,9 @@ public sealed class BlobStore
 {
     public string Root { get; }
     private string TempDir => Path.Combine(Root, "tmp");
+
+    /// <summary>When set, blobs are written encrypted and read decrypted. Hashes are always of the plaintext.</summary>
+    public byte[]? Key { get; set; }
 
     public BlobStore(string root)
     {
@@ -33,17 +37,25 @@ public sealed class BlobStore
         try
         {
             using (var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
-            using (var dst = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None, Hashing.BufferSize, FileOptions.SequentialScan))
+            using (var file = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write, FileShare.None, Hashing.BufferSize, FileOptions.SequentialScan))
             {
-                var buffer = new byte[Hashing.BufferSize];
-                int read;
-                while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+                var dst = Key != null ? ChunkedAesGcm.CreateEncryptor(file, Key) : file;
+                try
                 {
-                    ct.ThrowIfCancellationRequested();
-                    sha.AppendData(buffer, 0, read);
-                    dst.Write(buffer, 0, read);
+                    var buffer = new byte[Hashing.BufferSize];
+                    int read;
+                    while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        ct.ThrowIfCancellationRequested();
+                        sha.AppendData(buffer, 0, read);
+                        dst.Write(buffer, 0, read);
+                    }
                 }
-                dst.Flush(true);
+                finally
+                {
+                    if (!ReferenceEquals(dst, file)) dst.Dispose(); // writes the final chunk
+                }
+                file.Flush(true);
                 hash = Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
             }
 
@@ -73,8 +85,11 @@ public sealed class BlobStore
         }
     }
 
-    public Stream OpenRead(string hash) =>
-        new FileStream(PathFor(hash), FileMode.Open, FileAccess.Read, FileShare.Read, Hashing.BufferSize, FileOptions.SequentialScan);
+    public Stream OpenRead(string hash)
+    {
+        var file = new FileStream(PathFor(hash), FileMode.Open, FileAccess.Read, FileShare.Read, Hashing.BufferSize, FileOptions.SequentialScan);
+        return Key != null ? ChunkedAesGcm.CreateDecryptor(file, Key) : file;
+    }
 
     public long SizeOf(string hash)
     {

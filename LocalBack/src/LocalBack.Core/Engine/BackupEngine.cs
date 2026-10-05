@@ -31,8 +31,13 @@ public sealed class BackupEngine
 
     public LocalIndex Index => _index;
 
-    public DriveStore RequireDrive(BackupSet set) =>
-        DriveLocator.Find(set.Drive) ?? throw new DriveNotAvailableException(set.Name, string.IsNullOrEmpty(set.Drive.Label) ? set.Drive.LastRoot : set.Drive.Label);
+    public DriveStore RequireDrive(BackupSet set)
+    {
+        var label = string.IsNullOrEmpty(set.Drive.Label) ? set.Drive.LastRoot : set.Drive.Label;
+        var drive = DriveLocator.Find(set.Drive) ?? throw new DriveNotAvailableException(set.Name, label);
+        if (drive.IsLocked) throw new DriveLockedException(set.Name, label);
+        return drive;
+    }
 
     // ------------------------------------------------------------------ backup
 

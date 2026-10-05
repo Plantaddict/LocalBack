@@ -21,10 +21,13 @@ public sealed class SetStore
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private static readonly JsonSerializerOptions LineOptions = new() { WriteIndented = false };
 
-    public SetStore(string setsDir, string id)
+    private readonly byte[]? _key;
+
+    public SetStore(string setsDir, string id, byte[]? key = null)
     {
         Id = id;
         Dir = Path.Combine(setsDir, id);
+        _key = key;
     }
 
     public bool Exists => Directory.Exists(Dir);
@@ -69,7 +72,7 @@ public sealed class SetStore
 
     public string? LatestManifestName() => ManifestNames().LastOrDefault();
 
-    public Manifest ReadManifest(string name) => Manifest.Read(Path.Combine(ManifestsDir, name));
+    public Manifest ReadManifest(string name) => Manifest.Read(Path.Combine(ManifestsDir, name), _key);
 
     public static bool IsManifestName(string name) =>
         name.EndsWith(ManifestExtension, StringComparison.Ordinal) &&
@@ -99,7 +102,7 @@ public sealed class SetStore
     {
         Directory.CreateDirectory(ManifestsDir);
         var name = NewManifestName(manifest.CreatedUtc);
-        Manifest.Write(Path.Combine(ManifestsDir, name), manifest);
+        Manifest.Write(Path.Combine(ManifestsDir, name), manifest, _key);
         var info = SnapshotDiff.ToInfo(name, manifest, diff);
         try
         {
@@ -112,7 +115,7 @@ public sealed class SetStore
         return info;
     }
 
-    public void ReplaceManifest(string name, Manifest manifest) => Manifest.Write(Path.Combine(ManifestsDir, name), manifest);
+    public void ReplaceManifest(string name, Manifest manifest) => Manifest.Write(Path.Combine(ManifestsDir, name), manifest, _key);
 
     public void DeleteManifest(string name) => AtomicFile.TryDelete(Path.Combine(ManifestsDir, name));
 

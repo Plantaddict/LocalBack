@@ -4,7 +4,7 @@ using LocalBack.Core.Util;
 
 namespace LocalBack.Core.Service;
 
-public enum SetHealth { UpToDate, Pending, Running, DriveMissing, Paused, Error, NeverRun, Disabled }
+public enum SetHealth { UpToDate, Pending, Running, DriveMissing, Paused, Error, NeverRun, Disabled, Locked }
 
 public sealed record SetStatus(
     BackupSet Set,
@@ -25,13 +25,14 @@ public sealed record SetStatus(
         SetHealth.Paused => "Paused",
         SetHealth.Error => "Last backup failed",
         SetHealth.Disabled => "Browse only",
+        SetHealth.Locked => "Needs password",
         _ => "Not backed up yet",
     };
 
     /// <summary>Second line under the status: "14:32 today", "3 files changed".</summary>
     public string WhenText => Health switch
     {
-        SetHealth.Pending or SetHealth.DriveMissing or SetHealth.Paused when PendingCount > 0 => Format.Plural(PendingCount, "file changed", "files changed"),
+        SetHealth.Pending or SetHealth.DriveMissing or SetHealth.Paused or SetHealth.Locked when PendingCount > 0 => Format.Plural(PendingCount, "file changed", "files changed"),
         SetHealth.Error => Error ?? "",
         _ => LastRun is { } t ? Format.When(t) : "Never",
     };
@@ -42,6 +43,7 @@ public sealed record SetStatus(
         SetHealth.Running => "Running",
         SetHealth.Error => "Failed",
         SetHealth.Disabled => "Browse only",
+        SetHealth.Locked => "Locked",
         _ when PendingCount > 0 => $"{PendingCount} pending",
         SetHealth.DriveMissing => "No drive",
         _ => LastRun is { } t ? (t.ToLocalTime().Date == DateTime.Today ? t.ToLocalTime().ToString("HH:mm") : Format.When(t)) : "Never",

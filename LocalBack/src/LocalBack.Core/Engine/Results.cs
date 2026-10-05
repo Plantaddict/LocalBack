@@ -8,6 +8,13 @@ public sealed class DriveNotAvailableException : Exception
         : base($"The backup drive for \"{setName}\" ({driveLabel}) is not plugged in.") { }
 }
 
+/// <summary>The destination is encrypted and its password has not been entered on this PC.</summary>
+public sealed class DriveLockedException : Exception
+{
+    public DriveLockedException(string setName, string driveLabel)
+        : base($"The backup destination for \"{setName}\" ({driveLabel}) needs its password.") { }
+}
+
 public sealed record BackupProgress(string Phase, int FilesDone, int FilesTotal, long BytesCopied, string? CurrentFile);
 
 public sealed class BackupResult

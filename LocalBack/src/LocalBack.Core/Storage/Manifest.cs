@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using LocalBack.Core.Crypto;
 using LocalBack.Core.Util;
 
 namespace LocalBack.Core.Storage;
@@ -47,17 +48,32 @@ public sealed class Manifest
 
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = false };
 
-    public static void Write(string path, Manifest manifest) =>
+    /// <summary>Gzip, then encrypted when <paramref name="key"/> is given (manifests hold every file name).</summary>
+    public static void Write(string path, Manifest manifest, byte[]? key = null) =>
         AtomicFile.Write(path, s =>
         {
-            using var gz = new GZipStream(s, CompressionLevel.Fastest, leaveOpen: true);
-            JsonSerializer.Serialize(gz, manifest, Options);
+            var outer = key != null ? ChunkedAesGcm.CreateEncryptor(s, key) : s;
+            try
+            {
+                using var gz = new GZipStream(outer, CompressionLevel.Fastest, leaveOpen: true);
+                JsonSerializer.Serialize(gz, manifest, Options);
+            }
+            finally
+            {
+                if (!ReferenceEquals(outer, s)) outer.Dispose();
+            }
         });
 
-    public static Manifest Read(string path)
+    public static Manifest Read(string path, byte[]? key = null)
     {
         using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.SequentialScan);
-        using var gz = new GZipStream(fs, CompressionMode.Decompress);
+        Span<byte> head = stackalloc byte[4];
+        int got = fs.Read(head);
+        fs.Position = 0;
+        bool encrypted = got == 4 && ChunkedAesGcm.LooksEncrypted(head);
+        if (encrypted && key == null) throw new System.Security.Cryptography.CryptographicException("This destination is encrypted; enter its password.");
+        using var inner = encrypted ? ChunkedAesGcm.CreateDecryptor(fs, key!) : fs;
+        using var gz = new GZipStream(inner, CompressionMode.Decompress);
         return JsonSerializer.Deserialize<Manifest>(gz, Options) ?? throw new InvalidDataException($"Empty manifest {path}");
     }
 

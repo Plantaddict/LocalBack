@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using LocalBack.Core.Crypto;
 using LocalBack.Core.Drives;
 using LocalBack.Core.Engine;
 using LocalBack.Core.Indexing;
@@ -65,6 +66,7 @@ public sealed class BackupService : IDisposable
     {
         _paths = paths;
         Log.Init(paths.DataDir);
+        KeyStore.Init(paths.DataDir);
         Settings = SettingsStore.Load(paths.SettingsFile);
         Index = new LocalIndex(paths.IndexFile);
         Engine = new BackupEngine(Index, paths.TempDir);
@@ -126,12 +128,21 @@ public sealed class BackupService : IDisposable
 
     // ------------------------------------------------------------------ sets
 
-    /// <summary>Creates a set on a drive and queues its first backup.</summary>
+    /// <summary>
+    /// Creates a set on a destination and queues its first backup. <paramref name="password"/> encrypts a destination
+    /// that is used for the first time, or unlocks an existing encrypted one.
+    /// </summary>
     public BackupSet AddSet(string name, IEnumerable<string> folders, string driveRoot, RunSchedule schedule,
-        IEnumerable<string> enabledRules, IEnumerable<string> customPatterns, bool keepHistory)
+        IEnumerable<string> enabledRules, IEnumerable<string> customPatterns, bool keepHistory, string? password = null)
     {
         var roots = NormalizeFolders(folders);
-        var driveRef = DriveLocator.Register(driveRoot);
+        var existing = DriveStore.TryOpen(driveRoot);
+        if (existing != null && existing.IsLocked)
+        {
+            if (string.IsNullOrEmpty(password) || !existing.Unlock(password))
+                throw new DriveLockedException(name, driveRoot);
+        }
+        var driveRef = DriveLocator.Register(driveRoot, password);
         var store = DriveStore.TryOpen(driveRoot) ?? DriveStore.OpenOrCreate(driveRoot);
         BackupSet set;
         lock (_gate)
@@ -277,6 +288,27 @@ public sealed class BackupService : IDisposable
 
     // ------------------------------------------------------------------ triggers
 
+    /// <summary>Tries a password for an encrypted destination. On success the key is kept on this PC and queued runs continue.</summary>
+    public bool UnlockDrive(DriveStore drive, string password)
+    {
+        if (!drive.Unlock(password)) return false;
+        Log.Info($"Unlocked destination {drive.DriveRoot}");
+        RefreshAll();
+        foreach (var set in Sets)
+            if (set.Enabled && DriveFor(set) is { } d && d.Identity.Id == drive.Identity.Id)
+                Enqueue(set, full: true, SnapshotTrigger.Manual);
+        RaiseStatus();
+        return true;
+    }
+
+    /// <summary>Drops the saved key for a destination, so its password is asked for again.</summary>
+    public void LockDrive(DriveStore drive)
+    {
+        KeyStore.Forget(drive.Identity.Id);
+        RefreshAll();
+        RaiseStatus();
+    }
+
     /// <summary>"Back up now" for one set or all of them. Completes when the runs finish.</summary>
     public Task BackUpNowAsync(BackupSet? only = null)
     {
@@ -308,7 +340,7 @@ public sealed class BackupService : IDisposable
             var before = GetCached(set).Drive != null;
             Refresh(set);
             var now = GetCached(set).Drive;
-            if (now != null && !before && (root == null || PathUtil.Comparer.Equals(PathUtil.NormalizeFolder(now.DriveRoot), PathUtil.NormalizeFolder(root))))
+            if (now != null && !before && (root == null || PathUtil.IsUnder(PathUtil.NormalizeFolder(now.DriveRoot), PathUtil.NormalizeFolder(root))))
             {
                 Log.Info($"Drive for {set.Name} arrived at {now.DriveRoot}");
                 Enqueue(set, full: true, SnapshotTrigger.DrivePlugIn);
@@ -447,6 +479,13 @@ public sealed class BackupService : IDisposable
                 if (item.Paths.Count > 0) Index.AddPending(set.Id, item.Paths, DateTimeOffset.UtcNow);
                 return;
             }
+            if (drive.IsLocked)
+            {
+                // Keep the changes for when the password is entered.
+                if (item.Paths.Count > 0) Index.AddPending(set.Id, item.Paths, DateTimeOffset.UtcNow);
+                Refresh(set);
+                return;
+            }
             var paths = item.Full ? null : item.Paths.ToList();
             result = Engine.BackupAsync(set, item.Trigger, paths, progress).GetAwaiter().GetResult();
             lock (_gate) _lastCopied[set.Drive.Id] = Math.Max(result.BytesCopied, _lastCopied.GetValueOrDefault(set.Drive.Id) / 2);
@@ -470,7 +509,7 @@ public sealed class BackupService : IDisposable
             Refresh(set);
             CheckSpace(drive);
         }
-        catch (DriveNotAvailableException)
+        catch (Exception ex) when (ex is DriveNotAvailableException or DriveLockedException)
         {
             if (item.Paths.Count > 0) Index.AddPending(set.Id, item.Paths, DateTimeOffset.UtcNow);
             Refresh(set);
@@ -564,6 +603,10 @@ public sealed class BackupService : IDisposable
         var next = NextDue(DateTimeOffset.Now) - DateTimeOffset.Now;
         if (next < TimeSpan.FromSeconds(1)) next = TimeSpan.FromSeconds(1);
         if (next > TimeSpan.FromHours(1)) next = TimeSpan.FromHours(1); // re-check after sleep/clock changes
+        // A network share gives no plug-in event; look for it again every few minutes while it is away.
+        bool shareAway;
+        lock (_gate) shareAway = Settings.Sets.Any(s => s.Enabled && s.Drive.IsNetwork && _cache.TryGetValue(s.Id, out var c) && c.Drive == null);
+        if (shareAway && next > TimeSpan.FromMinutes(3)) next = TimeSpan.FromMinutes(3);
         try { _scheduleTimer.Change(next, Timeout.InfiniteTimeSpan); }
         catch (ObjectDisposedException) { }
     }
@@ -598,6 +641,18 @@ public sealed class BackupService : IDisposable
                 FlushPending(SnapshotTrigger.Live);
             }
             if (IsPaused) return;
+
+            // Network destinations that were away: see whether they are back.
+            foreach (var set in Sets)
+            {
+                if (!set.Enabled || !set.Drive.IsNetwork || GetCached(set).Drive != null) continue;
+                DriveLocator.ForgetUnreachable();
+                if (Refresh(set).Drive != null)
+                {
+                    Log.Info($"Network destination for {set.Name} is reachable again");
+                    Enqueue(set, full: true, SnapshotTrigger.DrivePlugIn);
+                }
+            }
 
             var todayCheck = new DateTimeOffset(now.Date + Settings.DailyCheckAt, now.Offset);
             foreach (var set in Sets)
@@ -735,6 +790,7 @@ public sealed class BackupService : IDisposable
             running ? SetHealth.Running
             : !set.Enabled ? SetHealth.Disabled
             : c.Drive == null ? SetHealth.DriveMissing
+            : c.Drive.IsLocked ? SetHealth.Locked
             : IsPaused ? SetHealth.Paused
             : state.LastError != null ? SetHealth.Error
             : pending > 0 || queued ? SetHealth.Pending

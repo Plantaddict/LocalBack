@@ -47,20 +47,28 @@ public static class DriveLocator
         return list;
     }
 
+    public static bool IsNetworkPath(string path) => path.StartsWith(@"\\", StringComparison.Ordinal) || path.StartsWith("//", StringComparison.Ordinal);
+
     public static DriveCandidate? Describe(string root)
     {
-        try
+        if (!IsNetworkPath(root))
         {
-            var d = new DriveInfo(root);
-            if (d.IsReady && string.Equals(PathUtil.NormalizeFolder(d.RootDirectory.FullName), PathUtil.NormalizeFolder(root), PathUtil.Comparison))
-                return new DriveCandidate(d.RootDirectory.FullName, SafeLabel(d), d.DriveFormat, d.AvailableFreeSpace, d.TotalSize,
-                    d.DriveType == DriveType.Removable, false, DriveStore.TryOpen(root) != null);
+            try
+            {
+                var d = new DriveInfo(root);
+                if (d.IsReady && string.Equals(PathUtil.NormalizeFolder(d.RootDirectory.FullName), PathUtil.NormalizeFolder(root), PathUtil.Comparison))
+                    return new DriveCandidate(d.RootDirectory.FullName, SafeLabel(d), d.DriveFormat, d.AvailableFreeSpace, d.TotalSize,
+                        d.DriveType == DriveType.Removable, false, DriveStore.TryOpen(root) != null);
+            }
+            catch (ArgumentException) { }
+            catch (IOException) { }
         }
-        catch (ArgumentException) { }
-        catch (IOException) { }
-        // A plain folder used as a destination (tests, CLI).
+        // A folder on a drive, or a network share.
         if (Directory.Exists(root))
-            return new DriveCandidate(root, "", "", 0, 0, false, false, DriveStore.TryOpen(root) != null);
+        {
+            var (free, total) = DiskSpace.Get(root);
+            return new DriveCandidate(root, "", "", free, total, false, false, DriveStore.TryOpen(root) != null);
+        }
         return null;
     }
 
@@ -70,34 +78,79 @@ public static class DriveLocator
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return ""; }
     }
 
-    /// <summary>Builds the reference saved in a set for a drive, creating the store on it.</summary>
-    public static DriveRef Register(string driveRoot)
+    /// <summary>
+    /// Builds the reference saved in a set for a destination (drive root, folder on a drive, or network share),
+    /// creating the store there on first use, encrypted when <paramref name="password"/> is given.
+    /// </summary>
+    public static DriveRef Register(string destination, string? password = null)
     {
-        var store = DriveStore.OpenOrCreate(driveRoot);
-        var desc = Describe(driveRoot);
+        var dest = PathUtil.NormalizeFolder(destination);
+        var store = DriveStore.OpenOrCreate(dest, password);
+        bool network = IsNetworkPath(dest);
+        string? subPath = null;
+        string label = "";
+        if (!network)
+        {
+            var volume = Path.GetPathRoot(dest) ?? dest;
+            subPath = Path.GetRelativePath(volume, dest);
+            if (subPath == ".") subPath = "";
+            label = Describe(volume)?.Label ?? "";
+        }
         return new DriveRef
         {
             Id = store.Identity.Id,
-            VolumeSerial = VolumeSerial(driveRoot),
-            Label = desc?.Label ?? "",
-            LastRoot = driveRoot,
+            VolumeSerial = network ? null : VolumeSerial(dest),
+            Label = label,
+            LastRoot = dest,
+            SubPath = subPath,
         };
+    }
+
+    private static readonly Dictionary<string, DateTime> UnreachableUntil = new(PathUtil.Comparer);
+
+    /// <summary>An unreachable share can take seconds to answer; don't ask it again for a while.</summary>
+    private static bool NetworkRecentlyUnreachable(string root)
+    {
+        lock (UnreachableUntil)
+            return UnreachableUntil.TryGetValue(root, out var until) && until > DateTime.UtcNow;
+    }
+
+    private static void MarkUnreachable(string root)
+    {
+        lock (UnreachableUntil) UnreachableUntil[root] = DateTime.UtcNow + TimeSpan.FromSeconds(30);
     }
 
     /// <summary>Finds the drive a set lives on, wherever it is mounted now. Null when it is not plugged in.</summary>
     public static DriveStore? Find(DriveRef drive)
     {
-        if (!string.IsNullOrEmpty(drive.LastRoot) && Matches(drive, drive.LastRoot, out var hinted))
-            return hinted;
+        if (!string.IsNullOrEmpty(drive.LastRoot))
+        {
+            if (drive.IsNetwork)
+            {
+                if (NetworkRecentlyUnreachable(drive.LastRoot)) return null;
+                if (Matches(drive, drive.LastRoot, out var share)) return share;
+                MarkUnreachable(drive.LastRoot);
+                return null;
+            }
+            if (Matches(drive, drive.LastRoot, out var hinted)) return hinted;
+        }
+        // The drive may have a different letter now: look for the same folder on every drive.
         foreach (var d in ListDrives())
         {
-            if (Matches(drive, d.Root, out var store))
+            var root = string.IsNullOrEmpty(drive.SubPath) ? d.Root : Path.Combine(d.Root, drive.SubPath);
+            if (Matches(drive, root, out var store))
             {
-                drive.LastRoot = d.Root;
+                drive.LastRoot = PathUtil.NormalizeFolder(root);
                 return store;
             }
         }
         return null;
+    }
+
+    /// <summary>Forces the next <see cref="Find"/> of a network destination to try again now.</summary>
+    public static void ForgetUnreachable()
+    {
+        lock (UnreachableUntil) UnreachableUntil.Clear();
     }
 
     public static bool IsPresent(DriveRef drive) => Find(drive) != null;

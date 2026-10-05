@@ -16,7 +16,9 @@ public static class Program
 
           localback-cli drives                               List drives that can hold backups
           localback-cli add --name N --drive D --folder F [--folder F2] [--schedule live|hourly|daily|plugin]
-                            [--exclude PATTERN] [--rules temp,lock,...] [--no-history]
+                            [--exclude PATTERN] [--rules temp,lock,...] [--no-history] [--password PW]
+                                                     D is a drive (E:\), a folder (E:\Backups) or a share (\\nas\backups).
+                                                     --password encrypts a destination used for the first time.
           localback-cli sets                                 List backup sets and their status
           localback-cli backup [SET]                         Back up one set, or all
           localback-cli snapshots SET                        List snapshots, newest first
@@ -27,6 +29,9 @@ public static class Program
           localback-cli prune SET --plan last:3|daily|older:90 [--apply]
                                                              Preview (or apply) thinning old versions on the set's drive
           localback-cli remove SET [--delete-backups]        Stop backing up a set
+          localback-cli unlock SET [--password PW]           Enter the password of an encrypted destination
+          localback-cli lock SET                             Forget the saved password on this PC
+          localback-cli set-password SET                     Change the password of an encrypted destination
           localback-cli watch                                Run in the foreground: watch, schedule, back up
 
         SNAPSHOT is a name from "snapshots", "latest", or a number (1 = newest).
@@ -44,7 +49,7 @@ public static class Program
         {
             var paths = new AppPaths();
             // Commands that write share the engine with the tray app; only one process may run it at a time.
-            bool writes = args[0] is "add" or "backup" or "restore" or "prune" or "remove" or "watch";
+            bool writes = args[0] is "add" or "backup" or "restore" or "prune" or "remove" or "watch" or "set-password";
             using var engineLock = writes ? EngineLock.TryAcquire(paths.DataDir) : null;
             if (writes && engineLock == null)
                 return Fail("LocalBack is running. Use the app for this, or exit it from the tray icon first.");
@@ -62,13 +67,16 @@ public static class Program
                 "versions" => Versions(service, a),
                 "prune" => await Prune(service, a),
                 "remove" => await Remove(service, a),
+                "unlock" => Unlock(service, a),
+                "lock" => Lock(service, a),
+                "set-password" => SetPassword(service, a),
                 "watch" => Watch(service),
                 _ => Fail($"Unknown command \"{args[0]}\". Run localback-cli --help."),
             };
         }
-        catch (DriveNotAvailableException ex)
+        catch (Exception ex) when (ex is DriveNotAvailableException or DriveLockedException)
         {
-            return Fail(ex.Message);
+            return Fail(ex.Message + (ex is DriveLockedException ? " Run localback-cli unlock SET." : ""));
         }
         catch (ArgumentException ex)
         {
@@ -112,10 +120,81 @@ public static class Program
         var rules = a.Option("--rules") is { } r ? r.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) : ExclusionRules.DefaultEnabled.ToArray();
         foreach (var p in a.Options("--exclude"))
             if (LocalBack.Core.Scanning.ExclusionFilter.Validate(p) is { } err) throw new ArgumentException($"{p}: {err}");
-        var set = service.AddSet(name, folders, drive, schedule, rules, a.Options("--exclude"), !a.Flag("--no-history"));
+        var password = a.Option("--password");
+        var store = LocalBack.Core.Storage.DriveStore.TryOpen(PathUtil.NormalizeFolder(drive));
+        if (store == null && password == null && !Console.IsInputRedirected)
+        {
+            Console.Write("Protect this destination with a password? Leave empty for no encryption: ");
+            password = ReadPassword();
+            if (password.Length > 0)
+            {
+                Console.Write("Repeat the password: ");
+                if (ReadPassword() != password) throw new ArgumentException("The passwords do not match.");
+            }
+            else password = null;
+        }
+        if (store is { IsLocked: true } && password == null) password = AskPassword();
+        var set = service.AddSet(name, folders, drive, schedule, rules, a.Options("--exclude"), !a.Flag("--no-history"), password);
         Console.WriteLine($"Added \"{set.Name}\" (id {set.Id}). Running the first backup…");
         var result = await service.Engine.BackupAsync(set, SnapshotTrigger.FirstBackup, null, ConsoleProgress());
         Print(result);
+        return 0;
+    }
+
+    private static string AskPassword()
+    {
+        if (Console.IsInputRedirected) throw new ArgumentException("This destination is encrypted; pass --password.");
+        Console.Write("Password: ");
+        return ReadPassword();
+    }
+
+    private static string ReadPassword()
+    {
+        var sb = new System.Text.StringBuilder();
+        while (true)
+        {
+            var key = Console.ReadKey(intercept: true);
+            if (key.Key == ConsoleKey.Enter) { Console.WriteLine(); return sb.ToString(); }
+            if (key.Key == ConsoleKey.Backspace) { if (sb.Length > 0) sb.Length--; }
+            else if (!char.IsControl(key.KeyChar)) sb.Append(key.KeyChar);
+        }
+    }
+
+    private static int Unlock(BackupService service, Args a)
+    {
+        var set = FindSet(service, a.Positional(0) ?? throw new ArgumentException("Which set?"));
+        var drive = LocalBack.Core.Drives.DriveLocator.Find(set.Drive) ?? throw new DriveNotAvailableException(set.Name, set.Drive.LastRoot);
+        if (!drive.IsEncrypted) { Console.WriteLine("That destination is not encrypted."); return 0; }
+        if (!drive.IsLocked) { Console.WriteLine("Already unlocked on this PC."); return 0; }
+        var password = a.Option("--password") ?? AskPassword();
+        if (!service.UnlockDrive(drive, password)) return Fail("Wrong password.");
+        Console.WriteLine("Unlocked. The key is kept for this PC; use lock to forget it.");
+        return 0;
+    }
+
+    private static int Lock(BackupService service, Args a)
+    {
+        var set = FindSet(service, a.Positional(0) ?? throw new ArgumentException("Which set?"));
+        var drive = LocalBack.Core.Drives.DriveLocator.Find(set.Drive) ?? throw new DriveNotAvailableException(set.Name, set.Drive.LastRoot);
+        service.LockDrive(drive);
+        Console.WriteLine("The password will be asked for again.");
+        return 0;
+    }
+
+    private static int SetPassword(BackupService service, Args a)
+    {
+        var set = FindSet(service, a.Positional(0) ?? throw new ArgumentException("Which set?"));
+        var drive = LocalBack.Core.Drives.DriveLocator.Find(set.Drive) ?? throw new DriveNotAvailableException(set.Name, set.Drive.LastRoot);
+        if (!drive.IsEncrypted) return Fail("That destination is not encrypted. Encryption is chosen when a destination is first used.");
+        Console.Write("Current password: ");
+        var current = ReadPassword();
+        Console.Write("New password: ");
+        var next = ReadPassword();
+        Console.Write("Repeat the new password: ");
+        if (ReadPassword() != next) return Fail("The passwords do not match.");
+        if (next.Length == 0) return Fail("The password cannot be empty.");
+        if (!drive.ChangePassword(current, next)) return Fail("Wrong password.");
+        Console.WriteLine("Password changed.");
         return 0;
     }
 

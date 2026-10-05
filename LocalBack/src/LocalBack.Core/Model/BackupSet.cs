@@ -14,14 +14,21 @@ public enum RunSchedule
     OnPlugIn,
 }
 
-/// <summary>Which drive a set is kept on. Matched by the id in LocalBack\drive.json or the volume serial, never by letter.</summary>
+/// <summary>
+/// Where a set is kept: a drive root, a folder on a drive, or a network share. Matched by the id in
+/// LocalBack\drive.json or the volume serial, never by letter.
+/// </summary>
 public sealed class DriveRef
 {
     public string Id { get; set; } = "";
     public string? VolumeSerial { get; set; }
     public string Label { get; set; } = "";
-    /// <summary>Where the drive was last seen (e.g. "E:\"). Only a hint.</summary>
+    /// <summary>The destination folder as last seen (e.g. "E:\", "E:\Backups", "\\nas\backups"). Tried first.</summary>
     public string LastRoot { get; set; } = "";
+    /// <summary>Folder under the volume root (e.g. "Backups"), so the store is found again when the drive letter changes. Empty for the root; null for a network path.</summary>
+    public string? SubPath { get; set; } = "";
+
+    [JsonIgnore] public bool IsNetwork => SubPath == null;
 }
 
 public sealed class BackupSet
