@@ -70,4 +70,8 @@ v1 skips and retries. v2 can add Volume Shadow Copy via AlphaVSS for open Outloo
 
 ## Packaging
 
-Single-file publish, Run-key autostart, MSIX or Inno Setup. No admin required.
+Single-file, self-contained, ReadyToRun publish (`LocalBack.exe`, plus `localback-cli.exe`). Per-user Inno Setup installer in `installer/`, installing to `%LOCALAPPDATA%\Programs\LocalBack`; no admin. The app writes its own Run-key autostart and Explorer menu entries (HKCU) according to Settings; the uninstaller removes them.
+
+## Memory
+
+Windows are created when opened and released when closed. When no window is open and no backup is running, the app compacts the managed heap and trims its working set (`SetProcessWorkingSetSize(-1, -1)`), so idle memory in Task Manager stays low; pages come back on demand when a window opens.

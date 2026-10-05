@@ -15,7 +15,9 @@
     <PublishSingleFile>true</PublishSingleFile>
     <PublishReadyToRun>true</PublishReadyToRun>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- No bundle compression: compressed assemblies are unpacked into private memory at start (~100 MB for WPF),
+         uncompressed ones are mapped from the exe. The installer compresses the download anyway. -->
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
     <InvariantGlobalization>false</InvariantGlobalization>
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>

@@ -24,16 +24,28 @@ A small Windows tray app that keeps a versioned backup of chosen folders on an e
 
 Look: Windows-native (Segoe UI, flat panels, single blue accent `#0F5FBF`). Status colours: green `#1F7A4D` up to date, amber `#B85C00` pending/warning, red `#A12A2A` deleted.
 
+## Screenshots
+
+The real app, rendered on Windows by the UI test (`docs/screenshots/`, refreshed by any commit whose message contains `[screenshots]`).
+
+| | |
+| --- | --- |
+| ![Backup sets](docs/screenshots/Main.png) | ![Version history](docs/screenshots/History.png) |
+| ![Add backup set](docs/screenshots/AddSet.png) | ![Free up space](docs/screenshots/FreeSpace.png) |
+| ![Tray flyout](docs/screenshots/Tray.png) | ![Settings](docs/screenshots/Settings.png) |
+
 ## Stack
 
-- **.NET 8, C#.** WPF for the windows, created lazily and disposed on close; WinForms `NotifyIcon` for the tray. Publish self-contained, ReadyToRun, trimmed. Target ~25 MB RAM idle.
+- **.NET 8, C#.** WPF for the windows, created lazily and disposed on close; WinForms `NotifyIcon` for the tray. Published self-contained, single-file, ReadyToRun (WPF cannot be trimmed). Target ~25 MB RAM idle.
 - **Engine:** content-addressed blob store on the backup drive + JSON manifests per snapshot + SQLite index on the PC. See `docs/ARCHITECTURE.md` and `docs/BRIEF.md`.
 - Alternative if size matters more than ship date: Rust (`tray-icon`, `notify`, `rusqlite`, `blake3`) with egui or Tauri 2.
 
 ## Status
 
-Milestones 1–5 are implemented: engine, live watching, tray and main window, version history, retention and Free up space.
-Milestone 6 is partly done (autostart, Explorer menu, single-file publish); the installer and a measured perf pass against the 25 MB target are still open.
+All six milestones are implemented: engine, live watching, tray and main window, version history, retention and Free up space,
+and polish (autostart, Explorer menu, single-file build, per-user installer, idle memory trimming).
+
+Not yet done: use by a person on a real desktop with a real USB drive. Everything else runs in CI on Windows (see Testing).
 
 ## Code
 
@@ -52,7 +64,9 @@ src/
   LocalBack.App/      WPF tray app (net8.0-windows)
   LocalBack.Cli/      `localback-cli` command line, same settings and index as the app
 tests/
-  LocalBack.Core.Tests/   xUnit tests for the engine and service
+  LocalBack.Core.Tests/   engine and service tests (any OS)
+  LocalBack.App.Tests/    Windows: opens every screen, registry, tray icon, single instance
+installer/LocalBack.iss   Inno Setup script: per-user install, no admin
 tools/make_icon.py        regenerates Assets/LocalBack.ico
 ```
 
@@ -66,7 +80,27 @@ dotnet run --project src/LocalBack.App           # tray app (Windows)
 dotnet publish src/LocalBack.App -c Release -r win-x64 --self-contained -o publish
 ```
 
-`.github/workflows/build.yml` runs the tests on Windows and Linux, builds the app and uploads a `LocalBack-win-x64` artifact.
+Installer (Windows, Inno Setup 6):
+
+```
+dotnet publish src/LocalBack.Cli -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish/cli
+copy publish\cli\localback-cli.exe publish\LocalBack\
+iscc installer\LocalBack.iss /DAppVersion=0.1.0      # -> publish\LocalBack-Setup-0.1.0.exe
+```
+
+It installs to `%LOCALAPPDATA%\Programs\LocalBack` without admin rights. Uninstalling removes the autostart and Explorer entries and keeps settings and all backups.
+
+## Testing
+
+`.github/workflows/build.yml`, on every push:
+
+1. Engine and service tests on Windows and Linux.
+2. Builds the app, then opens every screen against a real backup set (catches XAML and binding errors at run time).
+3. Windows integration tests: autostart and Explorer registry entries, tray icon in every state, the device-change window, single-instance hand-off.
+4. Smoke test of the published `LocalBack.exe`: starts it in the tray with a real set, saves a file and checks the live backup, launches it a second time with `--history` and checks the hand-over, and reports memory.
+5. Builds the installer, installs and uninstalls it silently.
+
+Artifacts: `LocalBack-win-x64` (app + CLI), `LocalBack-Setup` (installer), `screenshots`.
 
 App command line: `LocalBack.exe --tray` (start hidden, used by autostart), `LocalBack.exe --history <path>` (used by the Explorer menu).
 

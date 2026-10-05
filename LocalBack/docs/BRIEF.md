@@ -1,7 +1,7 @@
 # LocalBack — project brief
 
 **Date:** 5 October 2026
-**Status:** Milestones 1–5 implemented; installer and perf pass open
+**Status:** All six milestones implemented and tested in CI on Windows; awaiting hands-on testing on a real desktop
 **Design:** five screens on the LocalBack canvas (Main, Version history, Tray flyout, Add backup set, Free up space)
 
 ## One line
@@ -72,7 +72,7 @@ Look: Windows-native. Segoe UI, flat panels, one blue accent (#0F5FBF), green/am
 
 ## Open questions
 
-- Should the auto-prune checkbox apply the chosen plan once, or become the standing retention policy in Settings? (Leaning: standing policy, shown in Settings as "Version retention".)
-- Default schedule on laptops: live, or hourly while on battery?
+- ~~Should the auto-prune checkbox apply the chosen plan once, or become the standing retention policy in Settings?~~ Decided: standing policy, Settings → Version retention.
+- ~~Default schedule on laptops: live, or hourly while on battery?~~ Decided: live, batched to at most every 15 minutes on battery (Settings toggle, on by default).
 - Should a backup set be allowed to span two drives (e.g. mirror to both when present)?
 - Encryption of the blob store for drives that leave the house.
