@@ -110,6 +110,9 @@ public class ScreensTests
         main.ViewModel.ShowHistory(set1, null);
         Pump(1500);
         Snap(main, "History");
+        var history = (HistoryViewModel)main.ViewModel.Current;
+        Assert.Equal(2, history.Snapshots.Count); // loaded once, no duplicates
+        Assert.Equal(4, history.Files.Count);     // added, added, modified, deleted
 
         main.ViewModel.ShowHistory(null, Path.Combine(desktop, "notes.txt"));
         Pump(1500);

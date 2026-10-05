@@ -60,7 +60,7 @@ public static class DriveLocator
         catch (IOException) { }
         // A plain folder used as a destination (tests, CLI).
         if (Directory.Exists(root))
-            return new DriveCandidate(root, Path.GetFileName(root.TrimEnd('/', '\\')), "", 0, 0, false, false, DriveStore.TryOpen(root) != null);
+            return new DriveCandidate(root, "", "", 0, 0, false, false, DriveStore.TryOpen(root) != null);
         return null;
     }
 

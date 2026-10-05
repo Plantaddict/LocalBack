@@ -60,6 +60,10 @@ jobs:
           Start-Sleep 5
           $app.Refresh(); if ($app.HasExited) { throw "App exited after opening history" }
           "MEMORY with main window open: working set {0:N1} MB, private {1:N1} MB" -f ($app.WorkingSet64 / 1MB), ($app.PrivateMemorySize64 / 1MB)
+          $app.CloseMainWindow() | Out-Null
+          Start-Sleep 25
+          $app.Refresh(); if ($app.HasExited) { throw "App exited when its window closed" }
+          "MEMORY after closing the window: working set {0:N1} MB, private {1:N1} MB" -f ($app.WorkingSet64 / 1MB), ($app.PrivateMemorySize64 / 1MB)
           Stop-Process -Id $app.Id -Force
           Get-Content (Join-Path $env:LOCALBACK_HOME "localback.log") -Tail 20
       - name: Build installer

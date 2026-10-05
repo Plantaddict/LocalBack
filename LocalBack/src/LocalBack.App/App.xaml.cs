@@ -23,6 +23,7 @@ public partial class App : Application
     private TrayFlyout? _flyout;
     private FreeSpaceWindow? _freeSpace;
     private DateTime _flyoutClosedAt;
+    private DispatcherTimer? _trimTimer;
 
     public static new App Current => (App)Application.Current;
     private BackupService? _service;
@@ -77,6 +78,24 @@ public partial class App : Application
         Service.Start();
         FlushStatus();
         HandleArgs(e.Args, fromOtherInstance: false);
+        _trimTimer = new DispatcherTimer(TimeSpan.FromSeconds(15), DispatcherPriority.ApplicationIdle, (_, _) => TrimIfIdle(), Dispatcher);
+        _trimTimer.Start();
+    }
+
+    /// <summary>Once nothing is open and nothing is running, hand memory back (checked a little after each change).</summary>
+    private void TrimIfIdle()
+    {
+        _trimTimer?.Stop();
+        if (_main != null || _flyout != null || _freeSpace != null || Windows.Count > 0) return;
+        if (_service == null || _service.IsBusy) return;
+        MemoryTrim.Trim();
+    }
+
+    private void ScheduleTrim()
+    {
+        if (_trimTimer == null) return;
+        _trimTimer.Stop();
+        _trimTimer.Start();
     }
 
     /// <summary>For UI tests: use a service without tray, device watcher or single-instance lock.</summary>
@@ -110,6 +129,7 @@ public partial class App : Application
             : $"LocalBack — {statuses.First(s => s.Health == worst).StatusText.ToLowerInvariant()}";
         _tray?.Update(worst, tip, Service.IsPaused);
         StatusRefreshed?.Invoke();
+        if (!Service.IsBusy) ScheduleTrim();
     }
 
     public static SetHealth Worst(IReadOnlyList<SetStatus> statuses)
@@ -130,8 +150,8 @@ public partial class App : Application
             _main.Closed += (_, _) =>
             {
                 _main = null;
-                // Give the memory back: windows are the bulk of the working set.
-                Dispatcher.InvokeAsync(() => GC.Collect(2, GCCollectionMode.Optimized, false), DispatcherPriority.ApplicationIdle);
+                // Windows are the bulk of the working set; give it back once things settle.
+                ScheduleTrim();
             };
             _main.Show();
         }
@@ -181,6 +201,7 @@ public partial class App : Application
         {
             _flyout = null;
             _flyoutClosedAt = DateTime.UtcNow;
+            ScheduleTrim();
         };
         _flyout.Show();
         _flyout.Activate();

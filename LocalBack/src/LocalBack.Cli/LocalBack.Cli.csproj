@@ -4,6 +4,8 @@
     <TargetFramework>net8.0</TargetFramework>
     <AssemblyName>localback-cli</AssemblyName>
     <RootNamespace>LocalBack.Cli</RootNamespace>
+    <!-- When published as one file, carry SQLite's native library inside it. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\LocalBack.Core\LocalBack.Core.csproj" />

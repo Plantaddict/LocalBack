@@ -24,6 +24,7 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
     private bool _loading;
     private CancellationTokenSource? _loadCts;
     private string? _pendingFocusPath;
+    private int _snapshotsLoad;
 
     public ObservableCollection<BackupSet> Sets { get; } = new();
     public ObservableCollection<SnapshotItem> Snapshots { get; } = new();
@@ -158,6 +159,8 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
     {
         var set = _set;
         if (set == null) return;
+        // Only the newest request may fill the list; an older one finishing late would add duplicates.
+        int load = ++_snapshotsLoad;
         Message = "";
         Status = "";
         Snapshots.Clear();
@@ -169,7 +172,7 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         try
         {
             var list = await Task.Run(() => _app.Service.Engine.ListSnapshots(set));
-            if (!ReferenceEquals(set, _set)) return;
+            if (load != _snapshotsLoad || !ReferenceEquals(set, _set)) return;
             foreach (var s in Enumerable.Reverse(list)) Snapshots.Add(new SnapshotItem(s, this));
             if (Snapshots.Count == 0)
             {
@@ -188,7 +191,7 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            Loading = false;
+            if (load == _snapshotsLoad) Loading = false;
         }
     }
 
