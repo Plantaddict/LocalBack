@@ -14,20 +14,20 @@ public static class Program
     private const string Usage = """
         LocalBack command line
 
-          localback drives                                   List drives that can hold backups
-          localback add --name N --drive D --folder F [--folder F2] [--schedule live|hourly|daily|plugin]
-                        [--exclude PATTERN] [--rules temp,lock,...] [--no-history]
-          localback sets                                     List backup sets and their status
-          localback backup [SET]                             Back up one set, or all
-          localback snapshots SET                            List snapshots, newest first
-          localback files SET [SNAPSHOT] [--changed]         List files in a snapshot (default: newest)
-          localback restore SET SNAPSHOT [--file PATH]... [--to FOLDER]
+          localback-cli drives                               List drives that can hold backups
+          localback-cli add --name N --drive D --folder F [--folder F2] [--schedule live|hourly|daily|plugin]
+                            [--exclude PATTERN] [--rules temp,lock,...] [--no-history]
+          localback-cli sets                                 List backup sets and their status
+          localback-cli backup [SET]                         Back up one set, or all
+          localback-cli snapshots SET                        List snapshots, newest first
+          localback-cli files SET [SNAPSHOT] [--changed]     List files in a snapshot (default: newest)
+          localback-cli restore SET SNAPSHOT [--file PATH]... [--to FOLDER]
                                                              Restore a snapshot (in place unless --to)
-          localback versions PATH                            Versions of one file
-          localback prune SET --plan last:3|daily|older:90 [--apply]
+          localback-cli versions PATH                        Versions of one file
+          localback-cli prune SET --plan last:3|daily|older:90 [--apply]
                                                              Preview (or apply) thinning old versions on the set's drive
-          localback remove SET [--delete-backups]            Stop backing up a set
-          localback watch                                    Run in the foreground: watch, schedule, back up
+          localback-cli remove SET [--delete-backups]        Stop backing up a set
+          localback-cli watch                                Run in the foreground: watch, schedule, back up
 
         SNAPSHOT is a name from "snapshots", "latest", or a number (1 = newest).
         Settings live in %LOCALAPPDATA%\LocalBack (override with LOCALBACK_HOME).
@@ -57,7 +57,7 @@ public static class Program
                 "prune" => await Prune(service, a),
                 "remove" => await Remove(service, a),
                 "watch" => Watch(service),
-                _ => Fail($"Unknown command \"{args[0]}\". Run localback --help."),
+                _ => Fail($"Unknown command \"{args[0]}\". Run localback-cli --help."),
             };
         }
         catch (DriveNotAvailableException ex)
@@ -116,7 +116,7 @@ public static class Program
     private static int Sets(BackupService service)
     {
         var statuses = service.GetStatuses();
-        if (statuses.Count == 0) Console.WriteLine("No backup sets yet. Add one with: localback add --name Desktop --drive E:\\ --folder %USERPROFILE%\\Desktop");
+        if (statuses.Count == 0) Console.WriteLine("No backup sets yet. Add one with: localback-cli add --name Desktop --drive E:\\ --folder %USERPROFILE%\\Desktop");
         foreach (var s in statuses)
         {
             Console.WriteLine($"{s.Set.Name} [{s.Set.Id}]  {s.StatusText} · {s.WhenText}");
@@ -288,7 +288,7 @@ public static class Program
             last = line;
         };
         service.Notify += (title, text, _) => Console.WriteLine($"{title}: {text}");
-        service.LowSpace += i => Console.WriteLine($"{i.DriveName} is almost full: {Format.Size(i.Free)} free. Run localback prune.");
+        service.LowSpace += i => Console.WriteLine($"{i.DriveName} is almost full: {Format.Size(i.Free)} free. Run localback-cli prune.");
         service.Start();
         Console.WriteLine("Watching. Press Ctrl+C to stop.");
         done.Wait();
@@ -298,7 +298,7 @@ public static class Program
     private static BackupSet FindSet(BackupService service, string idOrName) =>
         service.Sets.FirstOrDefault(s => s.Id.Equals(idOrName, StringComparison.OrdinalIgnoreCase))
         ?? service.Sets.FirstOrDefault(s => s.Name.Equals(idOrName, StringComparison.OrdinalIgnoreCase))
-        ?? throw new ArgumentException($"No backup set called {idOrName}. Run localback sets.");
+        ?? throw new ArgumentException($"No backup set called {idOrName}. Run localback-cli sets.");
 
     private sealed class Args
     {

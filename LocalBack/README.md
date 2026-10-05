@@ -50,7 +50,7 @@ src/
     Drives/           find drives by identity, not letter
     Service/          background service: queue, schedule, pause, low space, status
   LocalBack.App/      WPF tray app (net8.0-windows)
-  LocalBack.Cli/      `localback` command line, same settings and index as the app
+  LocalBack.Cli/      `localback-cli` command line, same settings and index as the app
 tests/
   LocalBack.Core.Tests/   xUnit tests for the engine and service
 tools/make_icon.py        regenerates Assets/LocalBack.ico
@@ -73,15 +73,15 @@ App command line: `LocalBack.exe --tray` (start hidden, used by autostart), `Loc
 ## Command line
 
 ```
-localback drives
-localback add --name Desktop --drive E:\ --folder %USERPROFILE%\Desktop
-localback backup [SET]
-localback snapshots SET
-localback files SET [SNAPSHOT] [--changed]
-localback restore SET SNAPSHOT [--file PATH]... [--to FOLDER]
-localback versions PATH
-localback prune SET --plan last:3|daily|older:90 [--apply]
-localback watch
+localback-cli drives
+localback-cli add --name Desktop --drive E:\ --folder %USERPROFILE%\Desktop
+localback-cli backup [SET]
+localback-cli snapshots SET
+localback-cli files SET [SNAPSHOT] [--changed]
+localback-cli restore SET SNAPSHOT [--file PATH]... [--to FOLDER]
+localback-cli versions PATH
+localback-cli prune SET --plan last:3|daily|older:90 [--apply]
+localback-cli watch
 ```
 
 Settings and the index live in `%LOCALAPPDATA%\LocalBack` (override with `LOCALBACK_HOME`).
