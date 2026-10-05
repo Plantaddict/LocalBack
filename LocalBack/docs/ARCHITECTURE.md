@@ -75,3 +75,15 @@ Single-file, self-contained, ReadyToRun publish (`LocalBack.exe`, plus `localbac
 ## Memory
 
 Windows are created when opened and released when closed. When no window is open and no backup is running, the app compacts the managed heap and trims its working set (`SetProcessWorkingSetSize(-1, -1)`), so idle memory in Task Manager stays low; pages come back on demand when a window opens.
+
+The single-file build is not compressed: compressed assemblies are unpacked into private memory at start (this alone cost about 110 MB), uncompressed ones are mapped from the exe. The installer compresses the download instead.
+
+Measured by CI on a GitHub Windows runner (published build, one live set of 300 files):
+
+| State | Working set (Task Manager) | Private bytes (committed) |
+| --- | --- | --- |
+| Idle in the tray | 6.3 MB | 27.6 MB |
+| Main window open | 126 MB | 64.5 MB |
+| 25 s after closing the window | 13.0 MB | 64.6 MB |
+
+Idle is at the brief's ~25 MB target. After a window has been open, committed memory stays around 65 MB (WPF keeps its resources and the GC keeps its heap committed); bringing that down further would need restarting the UI in a separate process, which is not worth it for v1.

@@ -97,7 +97,7 @@ It installs to `%LOCALAPPDATA%\Programs\LocalBack` without admin rights. Uninsta
 1. Engine and service tests on Windows and Linux.
 2. Builds the app, then opens every screen against a real backup set (catches XAML and binding errors at run time).
 3. Windows integration tests: autostart and Explorer registry entries, tray icon in every state, the device-change window, single-instance hand-off.
-4. Smoke test of the published `LocalBack.exe`: starts it in the tray with a real set, saves a file and checks the live backup, launches it a second time with `--history` and checks the hand-over, and reports memory.
+4. Smoke test of the published `LocalBack.exe`: starts it in the tray with a real set, saves a file and checks the live backup, launches it a second time with `--history` and checks the hand-over, and reports memory (idle in the tray: 6 MB working set, 28 MB committed; see `docs/ARCHITECTURE.md`).
 5. Builds the installer, installs and uninstalls it silently.
 
 Artifacts: `LocalBack-win-x64` (app + CLI), `LocalBack-Setup` (installer), `screenshots`.
