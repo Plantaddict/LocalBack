@@ -17,6 +17,12 @@ namespace LocalBack.App.Tests;
 public class ScreensTests
 {
     private static readonly string Shots = Path.Combine(AppContext.BaseDirectory, "screenshots");
+    private static readonly List<string> Steps = new();
+
+    private static void Step(string s)
+    {
+        lock (Steps) Steps.Add($"{DateTime.Now:HH:mm:ss.fff} {s}");
+    }
 
     [Fact]
     public void Every_screen_opens_and_renders()
@@ -28,14 +34,19 @@ public class ScreensTests
             catch (Exception ex) { error = ex; }
         });
         t.SetApartmentState(ApartmentState.STA);
+        t.IsBackground = true;
         t.Start();
-        Assert.True(t.Join(TimeSpan.FromMinutes(3)), "UI test timed out");
-        if (error != null) throw new Exception("UI test failed: " + error, error);
+        bool finished = t.Join(TimeSpan.FromMinutes(2));
+        string steps;
+        lock (Steps) steps = string.Join(Environment.NewLine, Steps);
+        Assert.True(finished, "UI test timed out after these steps:" + Environment.NewLine + steps);
+        if (error != null) throw new Exception("UI test failed after these steps:" + Environment.NewLine + steps + Environment.NewLine + error, error);
     }
 
     private static void Run()
     {
         SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
+        Dispatcher.CurrentDispatcher.UnhandledException += (_, e) => Step("dispatcher error: " + e.Exception);
         Directory.CreateDirectory(Shots);
         var root = Path.Combine(Path.GetTempPath(), "lb-ui-" + Guid.NewGuid().ToString("N")[..6]);
         var desktop = Path.Combine(root, "Desktop");
@@ -47,10 +58,12 @@ public class ScreensTests
         Write(Path.Combine(desktop, "old-draft.docx"), 88_000, 100);
         Write(Path.Combine(docs, "Invoices", "Invoice 2026-117.pdf"), 340_000, 100);
 
+        Step("service");
         var service = new BackupService(new AppPaths(Path.Combine(root, "home"), Path.Combine(root, "tmp")));
         service.Engine.YoungEmptyFileAge = TimeSpan.Zero;
         var set1 = service.AddSet("Desktop", new[] { desktop }, usb, RunSchedule.Live, ExclusionRules.DefaultEnabled, Array.Empty<string>(), true);
         var set2 = service.AddSet("Documents", new[] { docs }, usb, RunSchedule.Hourly, ExclusionRules.DefaultEnabled, Array.Empty<string>(), true);
+        Step("first backups");
         service.Engine.BackupAsync(set1, Core.Storage.SnapshotTrigger.FirstBackup).GetAwaiter().GetResult();
         service.Engine.BackupAsync(set2, Core.Storage.SnapshotTrigger.FirstBackup).GetAwaiter().GetResult();
         Write(Path.Combine(desktop, "Quarterly report.xlsx"), 1250_000, 60);
@@ -60,15 +73,20 @@ public class ScreensTests
         service.Engine.BackupAsync(set1, Core.Storage.SnapshotTrigger.Live).GetAwaiter().GetResult();
         service.RefreshAll();
 
+        Step("app");
         var app = new App();
         app.InitializeComponent();
         app.UseServiceForTests(service);
 
+        Step("main window");
         var main = new MainWindow();
+        Step("show main");
         main.Show();
         Pump(500);
+        Step("snap main");
         Snap(main, "Main");
 
+        Step("history");
         main.ViewModel.ShowHistory(set1, null);
         Pump(1500);
         Snap(main, "History");
@@ -77,38 +95,45 @@ public class ScreensTests
         Pump(1500);
         Snap(main, "History-file");
 
+        Step("drives");
         main.ViewModel.Navigate(Page.Drives);
         Pump(1500);
         Snap(main, "Drives");
 
+        Step("settings");
         main.ViewModel.Navigate(Page.Settings);
         Pump(300);
         Snap(main, "Settings");
 
+        Step("add set");
         var add = new AddSetWindow(null);
         add.Show();
         Pump(500);
         Snap(add, "AddSet");
         add.Close();
 
+        Step("edit set");
         var edit = new AddSetWindow(set2);
         edit.Show();
         Pump(300);
         Snap(edit, "EditSet");
         edit.Close();
 
+        Step("free space");
         var free = new FreeSpaceWindow(service.DriveFor(set1)!, lowSpace: true);
         free.Show();
         Pump(2000);
         Snap(free, "FreeSpace");
         free.Close();
 
+        Step("tray");
         var tray = new TrayFlyout();
         tray.Show();
         Pump(300);
         Snap(tray, "Tray");
         tray.Close();
 
+        Step("close");
         main.Close();
         Pump(100);
         service.Dispose();
@@ -130,7 +155,7 @@ public class ScreensTests
         do
         {
             var frame = new DispatcherFrame();
-            Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new DispatcherOperationCallback(_ =>
+            Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Background, new DispatcherOperationCallback(_ =>
             {
                 frame.Continue = false;
                 return null;
@@ -142,6 +167,7 @@ public class ScreensTests
 
     private static void Snap(Window w, string name)
     {
+        Step("snap " + name);
         var content = (FrameworkElement)w.Content;
         content.UpdateLayout();
         int width = (int)Math.Ceiling(content.ActualWidth), height = (int)Math.Ceiling(content.ActualHeight);
