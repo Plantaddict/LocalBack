@@ -36,6 +36,8 @@ public sealed class BackupSet
     public List<string> CustomPatterns { get; set; } = new();
     /// <summary>When false only the newest copy of each file is kept.</summary>
     public bool KeepHistory { get; set; } = true;
+    /// <summary>When false the set is only browsed and restored, never backed up (e.g. imported from another PC).</summary>
+    public bool Enabled { get; set; } = true;
 
     public string ScheduleText => Schedule switch
     {

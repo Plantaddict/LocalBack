@@ -302,3 +302,94 @@ public class BackupEngineTests
         Assert.Equal(1, snaps[1].Modified);
     }
 }
+
+public class ReviewFixTests
+{
+    [Fact]
+    public async Task Partial_run_with_the_source_folder_away_keeps_files_and_requeues_them()
+    {
+        using var env = new TestEnv();
+        var a = env.Write("a.txt", "1");
+        env.Write("b.txt", "2");
+        await env.Backup();
+
+        Directory.Move(env.Source, env.Source + "-away");
+        var r = await env.Backup(new[] { a });
+
+        Assert.Equal(0, r.Deleted);
+        Assert.Null(r.Snapshot);
+        Assert.Contains(a, env.Index.Pending(env.Set.Id));
+
+        Directory.Move(env.Source + "-away", env.Source);
+        var again = await env.Backup(env.Index.Pending(env.Set.Id));
+        Assert.Null(again.Snapshot); // nothing changed after all
+        Assert.Empty(env.Index.Pending(env.Set.Id));
+    }
+
+    [Fact]
+    public void Nested_source_folders_are_rejected()
+    {
+        var ex = Assert.Throws<ArgumentException>(() =>
+            LocalBack.Core.Service.BackupService.NormalizeFolders(new[] { "/data/work", "/data/work/sub", "/data/other" }));
+        Assert.Contains("inside", ex.Message);
+        Assert.Equal(2, LocalBack.Core.Service.BackupService.NormalizeFolders(new[] { "/data/work", "/data/work2", "/data/work/" }).Count);
+    }
+
+    [Fact]
+    public async Task Previewing_several_plans_at_once_matches_previewing_each()
+    {
+        using var env = new TestEnv();
+        for (int i = 0; i < 4; i++)
+        {
+            env.Write("r.xlsx", $"v{i} " + new string('x', 500 * (i + 1)), secondsAgo: 400 - i * 10);
+            await env.Backup();
+        }
+        var plans = LocalBack.Core.Model.RetentionPlan.Choices;
+        var all = LocalBack.Core.Retention.RetentionPlanner.PreviewAll(env.Drive, plans, DateTimeOffset.Now);
+        for (int i = 0; i < plans.Count; i++)
+        {
+            var one = LocalBack.Core.Retention.RetentionPlanner.Preview(env.Drive, plans[i], DateTimeOffset.Now);
+            Assert.Equal(one.BytesFreed, all[i].BytesFreed);
+            Assert.Equal(one.VersionsRemoved, all[i].VersionsRemoved);
+            Assert.Equal(one.CurrentBytes, all[i].CurrentBytes);
+        }
+        Assert.Equal(1, all[0].VersionsRemoved); // keep last 3 of 4
+    }
+
+    [Fact]
+    public async Task Keep_only_latest_leaves_one_snapshot_and_one_blob()
+    {
+        using var env = new TestEnv();
+        for (int i = 0; i < 3; i++)
+        {
+            env.Write("doc.txt", $"version {i}", secondsAgo: 300 - i * 10);
+            await env.Backup();
+        }
+        await LocalBack.Core.Retention.RetentionPlanner.KeepOnlyLatestAsync(env.Engine, env.Drive, env.Set.Id);
+
+        Assert.Single(env.Engine.ListSnapshots(env.Set));
+        Assert.Single(env.Drive.Blobs.EnumerateAll());
+        Assert.Equal("version 2", new StreamReader(env.Drive.Blobs.OpenRead(env.Drive.Blobs.EnumerateAll().Single().Hash)).ReadToEnd());
+        // The index agrees with the drive, so the next run copies nothing.
+        var r = await env.Backup();
+        Assert.Null(r.Snapshot);
+    }
+
+    [Fact]
+    public void Engine_lock_is_exclusive_per_data_folder()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "lb-lock-" + Guid.NewGuid().ToString("N")[..6]);
+        try
+        {
+            using (var first = LocalBack.Core.Service.EngineLock.TryAcquire(dir))
+            {
+                Assert.NotNull(first);
+                Assert.Null(LocalBack.Core.Service.EngineLock.TryAcquire(dir));
+                Assert.Null(LocalBack.Core.Service.EngineLock.Acquire(dir, TimeSpan.FromMilliseconds(600)));
+            }
+            using var again = LocalBack.Core.Service.EngineLock.TryAcquire(dir);
+            Assert.NotNull(again);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+}

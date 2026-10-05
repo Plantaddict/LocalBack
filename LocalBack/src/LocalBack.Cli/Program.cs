@@ -42,7 +42,13 @@ public static class Program
         }
         try
         {
-            using var service = new BackupService(new AppPaths());
+            var paths = new AppPaths();
+            // Commands that write share the engine with the tray app; only one process may run it at a time.
+            bool writes = args[0] is "add" or "backup" or "restore" or "prune" or "remove" or "watch";
+            using var engineLock = writes ? EngineLock.TryAcquire(paths.DataDir) : null;
+            if (writes && engineLock == null)
+                return Fail("LocalBack is running. Use the app for this, or exit it from the tray icon first.");
+            using var service = new BackupService(paths);
             var a = new Args(args.Skip(1));
             return args[0] switch
             {
@@ -259,11 +265,18 @@ public static class Program
     internal static RetentionPlan ParsePlan(string spec)
     {
         var parts = spec.Split(':', 2);
+        int Number(int fallback, string what)
+        {
+            if (parts.Length < 2) return fallback;
+            if (!int.TryParse(parts[1], out var n) || n < 1 || n > 100000)
+                throw new ArgumentException($"{what} must be a whole number of at least 1 (got \"{parts[1]}\").");
+            return n;
+        }
         return parts[0] switch
         {
-            "last" => new RetentionPlan(RetentionKind.KeepLast, Count: parts.Length > 1 ? int.Parse(parts[1]) : 3),
+            "last" => new RetentionPlan(RetentionKind.KeepLast, Count: Number(3, "Versions to keep")),
             "daily" => new RetentionPlan(RetentionKind.DailyThenWeekly),
-            "older" => new RetentionPlan(RetentionKind.OlderThan, Days: parts.Length > 1 ? int.Parse(parts[1]) : 90),
+            "older" => new RetentionPlan(RetentionKind.OlderThan, Days: Number(90, "Days")),
             _ => throw new ArgumentException($"Unknown plan {spec}. Use last:N, daily or older:DAYS."),
         };
     }

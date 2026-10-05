@@ -147,6 +147,8 @@ public sealed class AddSetViewModel : ObservableObject
         if (HasError) return;
         if (Name.Trim().Length == 0) { Error = "Give the set a name."; return; }
         if (Folders.Count == 0) { Error = "Add at least one folder to back up."; return; }
+        try { Core.Service.BackupService.NormalizeFolders(Folders); }
+        catch (ArgumentException ex) { Error = ex.Message; return; }
         var missing = Folders.FirstOrDefault(f => !Directory.Exists(f));
         if (missing != null) { Error = $"{missing} does not exist."; return; }
         var rules = Rules.Where(r => r.IsOn).Select(r => r.Rule.Id).ToList();

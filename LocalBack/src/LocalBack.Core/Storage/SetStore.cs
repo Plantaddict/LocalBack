@@ -29,10 +29,17 @@ public sealed class SetStore
 
     public bool Exists => Directory.Exists(Dir);
 
+    /// <summary>Writes set.json, unless it already says the same (every run calls this; the file rarely changes).</summary>
     public void SaveDefinition(BackupSet set)
     {
         Directory.CreateDirectory(ManifestsDir);
-        AtomicFile.WriteAllText(DefinitionFile, JsonSerializer.Serialize(set, JsonOptions));
+        var json = JsonSerializer.Serialize(set, JsonOptions);
+        try
+        {
+            if (File.Exists(DefinitionFile) && File.ReadAllText(DefinitionFile) == json) return;
+        }
+        catch (IOException) { }
+        AtomicFile.WriteAllText(DefinitionFile, json);
     }
 
     public BackupSet? LoadDefinition()

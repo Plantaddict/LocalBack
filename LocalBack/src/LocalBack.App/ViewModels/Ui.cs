@@ -15,7 +15,7 @@ public static class Ui
         SetHealth.UpToDate => Brush("Green"),
         SetHealth.Running => Brush("Accent"),
         SetHealth.Error => Brush("Red"),
-        SetHealth.NeverRun => Brush("BorderStrong"),
+        SetHealth.NeverRun or SetHealth.Disabled => Brush("BorderStrong"),
         _ => Brush("Amber"),
     };
 

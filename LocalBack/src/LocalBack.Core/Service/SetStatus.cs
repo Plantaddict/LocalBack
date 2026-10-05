@@ -4,7 +4,7 @@ using LocalBack.Core.Util;
 
 namespace LocalBack.Core.Service;
 
-public enum SetHealth { UpToDate, Pending, Running, DriveMissing, Paused, Error, NeverRun }
+public enum SetHealth { UpToDate, Pending, Running, DriveMissing, Paused, Error, NeverRun, Disabled }
 
 public sealed record SetStatus(
     BackupSet Set,
@@ -24,6 +24,7 @@ public sealed record SetStatus(
         SetHealth.DriveMissing => "Drive not connected",
         SetHealth.Paused => "Paused",
         SetHealth.Error => "Last backup failed",
+        SetHealth.Disabled => "Browse only",
         _ => "Not backed up yet",
     };
 
@@ -40,6 +41,7 @@ public sealed record SetStatus(
     {
         SetHealth.Running => "Running",
         SetHealth.Error => "Failed",
+        SetHealth.Disabled => "Browse only",
         _ when PendingCount > 0 => $"{PendingCount} pending",
         SetHealth.DriveMissing => "No drive",
         _ => LastRun is { } t ? (t.ToLocalTime().Date == DateTime.Today ? t.ToLocalTime().ToString("HH:mm") : Format.When(t)) : "Never",

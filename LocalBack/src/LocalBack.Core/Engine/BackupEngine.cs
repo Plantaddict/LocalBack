@@ -74,6 +74,7 @@ public sealed class BackupEngine
         progress?.Report(new BackupProgress("Checking for changes", 0, 0, 0, null));
         var now = new Dictionary<FileKey, FileState>(FileKey.Comparer);
         var rootSet = new HashSet<string>(roots, PathUtil.Comparer);
+        var unavailable = new List<string>();
         if (full)
         {
             for (int i = 0; i < roots.Count; i++)
@@ -104,6 +105,12 @@ public sealed class BackupEngine
                 int ri = roots.FindIndex(r => PathUtil.IsUnder(path, r));
                 if (ri < 0) continue;
                 var root = roots[ri];
+                if (!Directory.Exists(root))
+                {
+                    // Same rule as the full scan: a source folder that is away is not "everything deleted".
+                    unavailable.Add(path);
+                    continue;
+                }
                 var rel = PathUtil.ToManifestPath(root, path);
                 bool isRoot = rel == ".";
 
@@ -132,6 +139,8 @@ public sealed class BackupEngine
                 }
             }
         }
+
+        if (unavailable.Count > 0) Log.Warn($"Source folder missing, keeping previous copy of {unavailable.Count} changed paths");
 
         // 2. Copy new content to the drive.
         var toStore = now.Where(kv => !current.TryGetValue(kv.Key, out var old) || old.Size != kv.Value.Size || old.MTimeTicks != kv.Value.MTimeTicks).ToList();
@@ -246,10 +255,12 @@ public sealed class BackupEngine
 
         // Changes queued while the drive was away are covered by a full pass, or by the paths we just handled.
         if (full) _index.ClearPending(set.Id);
-        else _index.ClearPending(set.Id, changedPaths!.Select(Path.GetFullPath).Except(deferred, PathUtil.Comparer));
+        else _index.ClearPending(set.Id, changedPaths!.Select(Path.GetFullPath).Except(deferred.Concat(unavailable), PathUtil.Comparer));
 
         if (deferred.Count > 0)
             _index.AddPending(set.Id, deferred, started);
+        if (unavailable.Count > 0)
+            _index.AddPending(set.Id, unavailable, started);
 
         progress?.Report(new BackupProgress("Done", toStore.Count, toStore.Count, copied, null));
         Log.Info($"Backup {set.Name}: +{added} ~{modified} -{deleted}, {Format.Size(copied)} copied, {deferred.Count} deferred ({trigger}{(full ? ", full" : "")})");
@@ -325,7 +336,6 @@ public sealed class BackupEngine
         {
             var change = prevMap == null || !prevMap.TryGetValue(key, out var p) ? ChangeKind.Added
                 : p.Hash != e.Hash ? ChangeKind.Modified : ChangeKind.Unchanged;
-            if (prevMap == null) change = ChangeKind.Added;
             files.Add(new SnapshotFile(key, e, change));
         }
         if (prevMap != null)
@@ -336,7 +346,7 @@ public sealed class BackupEngine
         }
         files.Sort((a, b) =>
         {
-            int c = ((int)Rank(a.Change)).CompareTo((int)Rank(b.Change));
+            int c = Rank(a.Change).CompareTo(Rank(b.Change));
             return c != 0 ? c : string.Compare(a.Key.Path, b.Key.Path, StringComparison.OrdinalIgnoreCase);
         });
         var info = SnapshotDiff.ToInfo(snapshotName, cur, SnapshotDiff.Compute(prev, cur));

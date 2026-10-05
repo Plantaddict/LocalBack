@@ -51,18 +51,23 @@ public sealed class DriveStore
         return store;
     }
 
+    private DriveIdentity? _identity;
+
+    /// <summary>Read once per instance: the identity never changes after the drive is set up.</summary>
     public DriveIdentity Identity
     {
         get
         {
+            if (_identity != null) return _identity;
             try
             {
-                return JsonSerializer.Deserialize<DriveIdentity>(File.ReadAllText(IdentityFile)) ?? new DriveIdentity();
+                _identity = JsonSerializer.Deserialize<DriveIdentity>(File.ReadAllText(IdentityFile)) ?? new DriveIdentity();
             }
             catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
             {
                 return new DriveIdentity();
             }
+            return _identity;
         }
     }
 

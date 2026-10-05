@@ -62,6 +62,7 @@ public sealed class TrayViewModel : ObservableObject, IDisposable
                 SetHealth.DriveMissing => ("Backup drive not connected", "amber"),
                 SetHealth.Paused => ($"Paused until {service.Settings.PausedUntil!.Value.ToLocalTime():HH:mm}", "amber"),
                 SetHealth.NeverRun => ("Waiting for the first backup", "amber"),
+                SetHealth.Disabled => ("Nothing is being backed up", "amber"),
                 _ => ($"{Format.Plural(statuses.Sum(s => s.PendingCount), "change", "changes")} waiting", "amber"),
             };
         (BannerBackground, BannerForeground, BannerDetail, BannerIcon) = tone switch

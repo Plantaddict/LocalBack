@@ -84,26 +84,27 @@ public sealed class FreeSpaceViewModel : ObservableObject
     public async Task LoadAsync()
     {
         var (_, total) = _drive.Space();
-        foreach (var o in Options)
+        List<Core.Retention.PrunePreview> previews;
+        try
         {
-            try
-            {
-                var preview = await _app.Service.PreviewAsync(_drive, o.Plan, _cts.Token);
-                o.Preview = preview;
-                if (o == Options[0])
-                {
-                    CurrentPercent = total > 0 ? 100.0 * preview.CurrentBytes / total : 0;
-                    OlderPercent = total > 0 ? 100.0 * preview.OlderBytes / total : 0;
-                    CurrentText = $"Current files {Format.Size(preview.CurrentBytes)}";
-                    OlderText = $"Older versions {Format.Size(preview.OlderBytes)}";
-                    var top = preview.Offenders.Take(2).Select(x => $"{x.Name} ({x.Versions} versions, {Format.Size(x.Bytes)})").ToList();
-                    Offenders = top.Count > 0 ? "Biggest offenders: " + string.Join(", ", top) + "." : "";
-                }
-                Raise(nameof(ApplyText));
-                CommandManager.InvalidateRequerySuggested();
-            }
-            catch (OperationCanceledException) { return; }
+            previews = await _app.Service.PreviewAllAsync(_drive, Options.Select(o => o.Plan).ToList(), _cts.Token);
         }
+        catch (OperationCanceledException) { return; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            Offenders = $"Could not read the drive: {ex.Message}";
+            return;
+        }
+        for (int i = 0; i < Options.Count; i++) Options[i].Preview = previews[i];
+        var first = previews[0];
+        CurrentPercent = total > 0 ? 100.0 * first.CurrentBytes / total : 0;
+        OlderPercent = total > 0 ? 100.0 * first.OlderBytes / total : 0;
+        CurrentText = $"Current files {Format.Size(first.CurrentBytes)}";
+        OlderText = $"Older versions {Format.Size(first.OlderBytes)}";
+        var top = first.Offenders.Take(2).Select(x => $"{x.Name} ({x.Versions} versions, {Format.Size(x.Bytes)})").ToList();
+        Offenders = top.Count > 0 ? "Biggest offenders: " + string.Join(", ", top) + "." : "";
+        Raise(nameof(ApplyText));
+        CommandManager.InvalidateRequerySuggested();
     }
 
     private async Task ApplyAsync()

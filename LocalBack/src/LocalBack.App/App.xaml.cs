@@ -24,6 +24,7 @@ public partial class App : Application
     private FreeSpaceWindow? _freeSpace;
     private DateTime _flyoutClosedAt;
     private DispatcherTimer? _trimTimer;
+    private EngineLock? _engineLock;
 
     public static new App Current => (App)Application.Current;
     private BackupService? _service;
@@ -49,6 +50,17 @@ public partial class App : Application
         _instance.ArgumentsReceived += args => Dispatcher.InvokeAsync(() => HandleArgs(args, fromOtherInstance: true));
         _instance.Listen();
 
+        // A command-line backup or restore may be running; let it finish rather than racing it on the same index and drive.
+        var paths = new AppPaths();
+        _engineLock = EngineLock.Acquire(paths.DataDir, TimeSpan.FromSeconds(60));
+        if (_engineLock == null)
+        {
+            MessageBox.Show("A LocalBack command-line operation is still running. Start LocalBack again when it has finished.",
+                "LocalBack", MessageBoxButton.OK, MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
+
         DispatcherUnhandledException += (_, ex) =>
         {
             Log.Error("Unhandled UI error", ex.Exception);
@@ -56,7 +68,7 @@ public partial class App : Application
             ex.Handled = true;
         };
 
-        _service = new BackupService(new AppPaths()) { IsOnBattery = WindowsIntegration.IsOnBattery };
+        _service = new BackupService(paths) { IsOnBattery = WindowsIntegration.IsOnBattery };
         _statusTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, (_, _) => FlushStatus(), Dispatcher);
         Service.StatusChanged += () => Dispatcher.InvokeAsync(() => { if (!_statusTimer.IsEnabled) _statusTimer.Start(); });
         Service.LowSpace += info => Dispatcher.InvokeAsync(() => ShowFreeSpace(info.Drive, lowSpace: true));
@@ -129,7 +141,6 @@ public partial class App : Application
             : $"LocalBack — {statuses.First(s => s.Health == worst).StatusText.ToLowerInvariant()}";
         _tray?.Update(worst, tip, Service.IsPaused);
         StatusRefreshed?.Invoke();
-        if (!Service.IsBusy) ScheduleTrim();
     }
 
     public static SetHealth Worst(IReadOnlyList<SetStatus> statuses)
@@ -137,6 +148,8 @@ public partial class App : Application
         if (statuses.Any(s => s.Health == SetHealth.Running)) return SetHealth.Running;
         foreach (var h in new[] { SetHealth.Error, SetHealth.DriveMissing, SetHealth.Paused, SetHealth.Pending, SetHealth.NeverRun })
             if (statuses.Any(s => s.Health == h)) return h;
+        // Browse-only sets do not count against "everything is backed up".
+        if (statuses.All(s => s.Health == SetHealth.Disabled)) return SetHealth.Disabled;
         return SetHealth.UpToDate;
     }
 
@@ -225,6 +238,8 @@ public partial class App : Application
         _devices?.Dispose();
         _tray?.Dispose();
         _service?.Dispose();
+        _service?.Engine.CleanTemp();
+        _engineLock?.Dispose();
         _instance?.Dispose();
         base.OnExit(e);
     }

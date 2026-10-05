@@ -91,6 +91,7 @@ public sealed class SetRowViewModel : ObservableObject
         Restore = new RelayCommand(() => main.ShowHistory(Set, null));
         Edit = new RelayCommand(() => _app.ShowAddSet(Set));
         Remove = new AsyncCommand(RemoveAsync);
+        ToggleEnabled = new RelayCommand(() => _app.Service.SetEnabled(Set, !Set.Enabled));
         ShowFolder = new RelayCommand(() =>
         {
             var f = Set.Folders.FirstOrDefault();
@@ -104,7 +105,9 @@ public sealed class SetRowViewModel : ObservableObject
     public ICommand Restore { get; }
     public ICommand Edit { get; }
     public ICommand Remove { get; }
+    public ICommand ToggleEnabled { get; }
     public ICommand ShowFolder { get; }
+    public string ToggleEnabledText => _status?.Set.Enabled == false ? "Start backing up" : "Stop backing up (keep history)";
 
     public string Name => _status?.Set.Name ?? "";
     public string Path => _status?.FoldersText ?? "";

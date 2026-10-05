@@ -23,6 +23,7 @@ public sealed class BackupService : IDisposable
     private readonly Dictionary<string, Cached> _cache = new();
     private readonly Dictionary<string, DateTimeOffset> _lowSpaceWarned = new();
     private readonly Dictionary<string, long> _lastCopied = new();
+    private readonly Dictionary<string, int> _deferredRetries = new();
     private readonly AutoResetEvent _signal = new(false);
     private readonly Thread _worker;
     private readonly Timer _scheduleTimer;
@@ -40,8 +41,9 @@ public sealed class BackupService : IDisposable
     /// <summary>Minimum gap between live runs while throttled on battery.</summary>
     public TimeSpan BatteryInterval { get; set; } = TimeSpan.FromMinutes(15);
 
-    /// <summary>Delay before files that were in use are tried again.</summary>
+    /// <summary>Delay before files that were in use are tried again; doubles on each failed retry up to <see cref="DeferredRetryMax"/>.</summary>
     public TimeSpan DeferredRetry { get; set; } = TimeSpan.FromSeconds(30);
+    public TimeSpan DeferredRetryMax { get; set; } = TimeSpan.FromMinutes(30);
 
     public event Action? StatusChanged;
     public event Action<LowSpaceInfo>? LowSpace;
@@ -98,7 +100,6 @@ public sealed class BackupService : IDisposable
             _watchers.Clear();
         }
         if (_worker.IsAlive) _worker.Join(TimeSpan.FromSeconds(5));
-        Engine.CleanTemp();
         Index.Dispose();
     }
 
@@ -129,8 +130,9 @@ public sealed class BackupService : IDisposable
     public BackupSet AddSet(string name, IEnumerable<string> folders, string driveRoot, RunSchedule schedule,
         IEnumerable<string> enabledRules, IEnumerable<string> customPatterns, bool keepHistory)
     {
+        var roots = NormalizeFolders(folders);
         var driveRef = DriveLocator.Register(driveRoot);
-        var store = DriveStore.OpenOrCreate(driveRoot);
+        var store = DriveStore.TryOpen(driveRoot) ?? DriveStore.OpenOrCreate(driveRoot);
         BackupSet set;
         lock (_gate)
         {
@@ -141,7 +143,7 @@ public sealed class BackupService : IDisposable
             {
                 Id = id,
                 Name = name.Trim(),
-                Folders = folders.Select(PathUtil.NormalizeFolder).Distinct(PathUtil.Comparer).ToList(),
+                Folders = roots,
                 Drive = driveRef,
                 Schedule = schedule,
                 EnabledRules = enabledRules.ToList(),
@@ -159,9 +161,22 @@ public sealed class BackupService : IDisposable
         return set;
     }
 
+    /// <summary>Normalises source folders and rejects one inside another (files under it would be stored twice).</summary>
+    public static List<string> NormalizeFolders(IEnumerable<string> folders)
+    {
+        var roots = folders.Select(PathUtil.NormalizeFolder).Distinct(PathUtil.Comparer).ToList();
+        foreach (var a in roots)
+        {
+            var parent = roots.FirstOrDefault(b => !PathUtil.Comparer.Equals(a, b) && PathUtil.IsUnder(a, b));
+            if (parent != null) throw new ArgumentException($"{a} is inside {parent}; add just {parent}.");
+        }
+        return roots;
+    }
+
     /// <summary>Saves changes to a set's folders, schedule or exclusions.</summary>
     public void UpdateSet(BackupSet updated)
     {
+        updated.Folders = NormalizeFolders(updated.Folders);
         lock (_gate)
         {
             int i = Settings.Sets.FindIndex(s => s.Id == updated.Id);
@@ -171,7 +186,32 @@ public sealed class BackupService : IDisposable
         }
         StopWatching(updated.Id);
         StartWatching(updated);
-        Enqueue(updated, full: true, SnapshotTrigger.Manual);
+        if (updated.Enabled) Enqueue(updated, full: true, SnapshotTrigger.Manual);
+        RaiseStatus();
+    }
+
+    /// <summary>Turns backing up on or off for a set; off keeps its history available for browsing and restore.</summary>
+    public void SetEnabled(BackupSet set, bool enabled)
+    {
+        BackupSet? live;
+        lock (_gate)
+        {
+            live = Settings.Sets.FirstOrDefault(s => s.Id == set.Id);
+            if (live == null) return;
+            live.Enabled = enabled;
+            SettingsStore.Save(_paths.SettingsFile, Settings);
+        }
+        if (enabled)
+        {
+            StartWatching(live);
+            Enqueue(live, full: true, SnapshotTrigger.Manual);
+        }
+        else
+        {
+            StopWatching(live.Id);
+            lock (_gate) _work.Remove(live.Id);
+        }
+        Log.Info($"{(enabled ? "Enabled" : "Disabled")} backing up {live.Name}");
         RaiseStatus();
     }
 
@@ -223,7 +263,7 @@ public sealed class BackupService : IDisposable
     {
         var set = SettingsStore.Clone(definition);
         set.Drive = DriveLocator.Register(drive.DriveRoot);
-        if (!watch) set.Schedule = RunSchedule.OnPlugIn;
+        set.Enabled = watch;
         lock (_gate)
         {
             Settings.Sets.Add(set);
@@ -242,7 +282,7 @@ public sealed class BackupService : IDisposable
     {
         var tasks = new List<Task>();
         foreach (var set in only != null ? new[] { only } : Sets.ToArray())
-            tasks.Add(Enqueue(set, full: true, SnapshotTrigger.Manual, force: true));
+            if (set.Enabled) tasks.Add(Enqueue(set, full: true, SnapshotTrigger.Manual, force: true));
         return Task.WhenAll(tasks);
     }
 
@@ -319,6 +359,7 @@ public sealed class BackupService : IDisposable
     private Task<BackupResult?> Enqueue(BackupSet set, bool full, SnapshotTrigger trigger, IEnumerable<string>? paths = null,
         bool force = false, DateTimeOffset? notBefore = null)
     {
+        if (!set.Enabled) return Task.FromResult<BackupResult?>(null);
         if (IsPaused && !force)
         {
             if (paths != null) Index.AddPending(set.Id, paths, DateTimeOffset.UtcNow);
@@ -368,7 +409,13 @@ public sealed class BackupService : IDisposable
                         continue;
                     }
                     var set = Settings.Sets.FirstOrDefault(s => s.Id == id);
-                    if (set == null) continue;
+                    if (set == null || !set.Enabled)
+                    {
+                        // The set was removed or disabled while queued: drop the item and release anyone waiting on it.
+                        _work.Remove(id);
+                        foreach (var w in item.Waiters) w.TrySetResult(null);
+                        break;
+                    }
                     next = (set, item);
                     _work.Remove(id);
                     _runningSetId = id;
@@ -405,14 +452,21 @@ public sealed class BackupService : IDisposable
             lock (_gate) _lastCopied[set.Drive.Id] = Math.Max(result.BytesCopied, _lastCopied.GetValueOrDefault(set.Drive.Id) / 2);
 
             if (result.Deferred.Count > 0)
-                Enqueue(set, full: false, SnapshotTrigger.Live, paths: result.Deferred, notBefore: DateTimeOffset.UtcNow + DeferredRetry);
-
-            if (!set.KeepHistory && result.Snapshot != null)
             {
-                var preview = RetentionPlanner.Preview(drive, new RetentionPlan(RetentionKind.KeepLast, Count: 1), DateTimeOffset.Now, new[] { set.Id });
-                if (preview.VersionsRemoved > 0)
-                    RetentionPlanner.ApplyAsync(Engine, drive, preview).GetAwaiter().GetResult();
+                // A file that stays open (a PST, a database) must not cost a run every 30 seconds: back off.
+                int tries;
+                lock (_gate) tries = _deferredRetries[set.Id] = _deferredRetries.GetValueOrDefault(set.Id) + 1;
+                var delay = DeferredRetry * Math.Pow(2, Math.Min(tries - 1, 10));
+                if (delay > DeferredRetryMax) delay = DeferredRetryMax;
+                Enqueue(set, full: false, SnapshotTrigger.Live, paths: result.Deferred, notBefore: DateTimeOffset.UtcNow + delay);
             }
+            else
+            {
+                lock (_gate) _deferredRetries.Remove(set.Id);
+            }
+
+            if (!set.KeepHistory && result.Snapshot != null && result.Modified + result.Deleted > 0)
+                RetentionPlanner.KeepOnlyLatestAsync(Engine, drive, set.Id).GetAwaiter().GetResult();
             Refresh(set);
             CheckSpace(drive);
         }
@@ -449,9 +503,10 @@ public sealed class BackupService : IDisposable
         var (free, total) = drive.Space();
         if (total <= 0) return;
         long estimate;
-        lock (_gate) estimate = _lastCopied.Where(kv => kv.Key == drive.Identity.Id).Select(kv => kv.Value).DefaultIfEmpty(0).Max();
+        lock (_gate) estimate = _lastCopied.GetValueOrDefault(drive.Identity.Id);
         var threshold = Math.Max((long)(total * Settings.LowSpaceFraction), Settings.LowSpaceMinBytes);
-        if (free >= threshold && free >= estimate * 2) return;
+        // Warn below the threshold, or when a run like the last one would not fit.
+        if (free >= threshold && free >= estimate + threshold / 2) return;
 
         var name = DriveName(drive);
         if (Settings.AutoFreeSpace)
@@ -483,6 +538,9 @@ public sealed class BackupService : IDisposable
 
     public Task<PrunePreview> PreviewAsync(DriveStore drive, RetentionPlan plan, CancellationToken ct = default) =>
         Task.Run(() => RetentionPlanner.Preview(drive, plan, DateTimeOffset.Now, null, ct), ct);
+
+    public Task<List<PrunePreview>> PreviewAllAsync(DriveStore drive, IReadOnlyList<RetentionPlan> plans, CancellationToken ct = default) =>
+        Task.Run(() => RetentionPlanner.PreviewAll(drive, plans, DateTimeOffset.Now, null, ct), ct);
 
     public async Task<long> FreeUpAsync(DriveStore drive, PrunePreview preview, CancellationToken ct = default)
     {
@@ -544,6 +602,7 @@ public sealed class BackupService : IDisposable
             var todayCheck = new DateTimeOffset(now.Date + Settings.DailyCheckAt, now.Offset);
             foreach (var set in Sets)
             {
+                if (!set.Enabled) continue;
                 var state = Index.GetState(set.Id);
                 bool drivePresent = GetCached(set).Drive != null;
                 if (!drivePresent) continue;
@@ -582,7 +641,7 @@ public sealed class BackupService : IDisposable
     {
         lock (_gate)
         {
-            if (_watchers.ContainsKey(set.Id)) return;
+            if (_watchers.ContainsKey(set.Id) || !set.Enabled) return;
             try
             {
                 var w = new SetWatcher(set, TimeSpan.FromSeconds(Math.Clamp(Settings.DebounceSeconds, 1, 30)), OnWatcherBatch);
@@ -674,6 +733,7 @@ public sealed class BackupService : IDisposable
         }
         SetHealth health =
             running ? SetHealth.Running
+            : !set.Enabled ? SetHealth.Disabled
             : c.Drive == null ? SetHealth.DriveMissing
             : IsPaused ? SetHealth.Paused
             : state.LastError != null ? SetHealth.Error

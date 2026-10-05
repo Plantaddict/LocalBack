@@ -44,12 +44,22 @@ public static class RetentionPlanner
     }
 
     public static PrunePreview Preview(DriveStore drive, RetentionPlan plan, DateTimeOffset now, IReadOnlyCollection<string>? onlySets = null, CancellationToken ct = default)
+        => PreviewAll(drive, new[] { plan }, now, onlySets, ct)[0];
+
+    /// <summary>Previews several plans with one walk of the manifests and blobs (the Free up space dialog shows three).</summary>
+    public static List<PrunePreview> PreviewAll(DriveStore drive, IReadOnlyList<RetentionPlan> plans, DateTimeOffset now, IReadOnlyCollection<string>? onlySets = null, CancellationToken ct = default)
     {
-        var drops = new Dictionary<string, List<Drop>>();
-        var keptHashes = new HashSet<string>(StringComparer.Ordinal);
+        int n = plans.Count;
+        var drops = new Dictionary<string, List<Drop>>[n];
+        var keptHashes = new HashSet<string>[n];
+        var removed = new int[n];
+        for (int p = 0; p < n; p++)
+        {
+            drops[p] = new Dictionary<string, List<Drop>>();
+            keptHashes[p] = new HashSet<string>(StringComparer.Ordinal);
+        }
         var currentHashes = new HashSet<string>(StringComparer.Ordinal);
         var offenders = new List<Offender>();
-        int removed = 0;
 
         foreach (var setStore in drive.Sets())
         {
@@ -75,44 +85,84 @@ public static class RetentionPlanner
             }
             int lastIdx = idx - 1;
             bool applies = onlySets == null || onlySets.Contains(setStore.Id);
-            var setDrops = new List<Drop>();
+            var setDrops = new List<Drop>[n];
+            for (int p = 0; p < n; p++) setDrops[p] = new List<Drop>();
 
             foreach (var (key, versions) in history)
             {
-                var keep = applies ? Decide(plan, versions, times, now) : versions.Select(_ => true).ToArray();
                 long bytes = 0;
                 var distinct = new HashSet<string>();
-                for (int i = 0; i < versions.Count; i++)
+                foreach (var v in versions)
                 {
-                    var v = versions[i];
                     if (distinct.Add(v.Hash)) bytes += v.Size;
-                    if (keep[i]) keptHashes.Add(v.Hash);
-                    else { setDrops.Add(new Drop(key, v.Hash, read[v.First], read[v.Last])); removed++; }
                     if (v.Last == lastIdx) currentHashes.Add(v.Hash);
                 }
                 if (versions.Count > 1) offenders.Add(new Offender(setStore.Id, key.Path, versions.Count, bytes));
+
+                for (int p = 0; p < n; p++)
+                {
+                    var keep = applies ? Decide(plans[p], versions, times, now) : null;
+                    for (int i = 0; i < versions.Count; i++)
+                    {
+                        var v = versions[i];
+                        if (keep == null || keep[i]) keptHashes[p].Add(v.Hash);
+                        else { setDrops[p].Add(new Drop(key, v.Hash, read[v.First], read[v.Last])); removed[p]++; }
+                    }
+                }
             }
-            if (setDrops.Count > 0) drops[setStore.Id] = setDrops;
+            for (int p = 0; p < n; p++)
+                if (setDrops[p].Count > 0) drops[p][setStore.Id] = setDrops[p];
         }
 
-        long freed = 0, current = 0, older = 0;
+        var freed = new long[n];
+        long current = 0, older = 0;
         foreach (var (hash, size) in drive.Blobs.EnumerateAll())
         {
-            if (!keptHashes.Contains(hash)) freed += size;
+            for (int p = 0; p < n; p++)
+                if (!keptHashes[p].Contains(hash)) freed[p] += size;
             if (currentHashes.Contains(hash)) current += size;
             else older += size;
         }
 
-        return new PrunePreview
+        var top = offenders.OrderByDescending(o => o.Bytes).Take(5).ToList();
+        var result = new List<PrunePreview>(n);
+        for (int p = 0; p < n; p++)
         {
-            Plan = plan,
-            BytesFreed = freed,
-            VersionsRemoved = removed,
-            CurrentBytes = current,
-            OlderBytes = older,
-            Offenders = offenders.OrderByDescending(o => o.Bytes).Take(5).ToList(),
-            Drops = drops,
-        };
+            result.Add(new PrunePreview
+            {
+                Plan = plans[p],
+                BytesFreed = freed[p],
+                VersionsRemoved = removed[p],
+                CurrentBytes = current,
+                OlderBytes = older,
+                Offenders = top,
+                Drops = drops[p],
+            });
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// For a set without version history: drops every snapshot but the newest, then collects garbage.
+    /// One pass over the drive's manifests (for the GC) instead of a full preview plus apply.
+    /// </summary>
+    public static async Task KeepOnlyLatestAsync(BackupEngine engine, DriveStore drive, string setId, CancellationToken ct = default)
+    {
+        await engine.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var setStore = drive.Set(setId);
+            var names = setStore.ManifestNames();
+            if (names.Count <= 1) return;
+            foreach (var name in names.Take(names.Count - 1)) setStore.DeleteManifest(name);
+            setStore.RebuildCatalog();
+            engine.Index.Rebuild(setId, BackupEngine.ReadAll(setStore));
+            CollectGarbage(drive, ct);
+        }
+        finally
+        {
+            engine.Gate.Release();
+        }
     }
 
     /// <summary>Which versions to keep, oldest first. The last one (the newest) is always kept.</summary>

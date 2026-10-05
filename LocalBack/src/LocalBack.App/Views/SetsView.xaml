@@ -58,6 +58,7 @@
                                         <MenuItem Header="Version history" Command="{Binding Restore}"/>
                                         <MenuItem Header="Open folder" Command="{Binding ShowFolder}"/>
                                         <Separator/>
+                                        <MenuItem Header="{Binding ToggleEnabledText}" Command="{Binding ToggleEnabled}"/>
                                         <MenuItem Header="Edit…" Command="{Binding Edit}"/>
                                         <MenuItem Header="Remove…" Command="{Binding Remove}"/>
                                     </ContextMenu>

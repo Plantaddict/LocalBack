@@ -28,7 +28,8 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<BackupSet> Sets { get; } = new();
     public ObservableCollection<SnapshotItem> Snapshots { get; } = new();
-    public ObservableCollection<FileRowViewModel> Files { get; } = new();
+    private ObservableCollection<FileRowViewModel> _files = new();
+    public ObservableCollection<FileRowViewModel> Files { get => _files; private set => Set(ref _files, value); }
 
     public HistoryViewModel(MainViewModel main)
     {
@@ -164,7 +165,7 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         Message = "";
         Status = "";
         Snapshots.Clear();
-        Files.Clear();
+        Files = new ObservableCollection<FileRowViewModel>();
         _details = null;
         _snapshot = null;
         RaiseHeader();
@@ -201,7 +202,7 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         var cts = _loadCts = new CancellationTokenSource();
         var set = _set;
         var snap = _snapshot;
-        Files.Clear();
+        Files = new ObservableCollection<FileRowViewModel>();
         _details = null;
         if (set == null || snap == null) return;
         Loading = true;
@@ -236,18 +237,23 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
 
     private void ApplyFilter()
     {
-        Files.Clear();
-        if (_details == null) return;
+        if (_details == null)
+        {
+            Files = new ObservableCollection<FileRowViewModel>();
+            return;
+        }
         var q = Search.Trim().Replace('\\', '/');
-        int shown = 0;
+        var rows = new List<FileRowViewModel>();
         foreach (var f in _details.Files)
         {
             if (OnlyChanged && f.Change == ChangeKind.Unchanged) continue;
             if (q.Length > 0 && f.Key.Path.IndexOf(q, StringComparison.OrdinalIgnoreCase) < 0) continue;
-            Files.Add(new FileRowViewModel(this, f, _details.Roots.Count > 1));
+            rows.Add(new FileRowViewModel(this, f, _details.Roots.Count > 1));
             // The list virtualises, but building millions of rows still costs; cap and say so.
-            if (++shown >= 5000) break;
+            if (rows.Count >= 5000) break;
         }
+        // One collection swap instead of a change notification per row.
+        Files = new ObservableCollection<FileRowViewModel>(rows);
         Raise(nameof(FilesEmpty));
         Raise(nameof(EmptyFilesText));
     }
@@ -261,7 +267,9 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
                         "Files that changed since then are kept as a new version first, so you can undo this. Files added since then are left alone.",
                         "Restore everything")) return;
         Status = "Restoring…";
-        var r = await _app.Service.Engine.RestoreSnapshotAsync(_set, _snapshot.Info.Name, null);
+        var set = _set;
+        var name = _snapshot.Info.Name;
+        var r = await Task.Run(() => _app.Service.Engine.RestoreSnapshotAsync(set, name, null));
         Status = Summary(r, null);
         await LoadSnapshotsAsync();
         Status = Summary(r, null);
@@ -273,7 +281,9 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         var dlg = new Microsoft.Win32.OpenFolderDialog { Title = $"Restore {_set.Name} ({_snapshot.Label}) to…" };
         if (dlg.ShowDialog() != true) return;
         Status = "Restoring…";
-        var r = await _app.Service.Engine.RestoreSnapshotAsync(_set, _snapshot.Info.Name, dlg.FolderName);
+        var set = _set;
+        var name = _snapshot.Info.Name;
+        var r = await Task.Run(() => _app.Service.Engine.RestoreSnapshotAsync(set, name, dlg.FolderName));
         Status = Summary(r, dlg.FolderName);
         if (r.Restored > 0) WindowsIntegration.OpenWithShell(dlg.FolderName);
     }
@@ -282,7 +292,8 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
     {
         if (_set == null) return;
         Status = $"Restoring {file.Name}…";
-        var r = await _app.Service.Engine.RestoreAsync(_set, new[] { (file.Key, file.Entry) }, null);
+        var set = _set;
+        var r = await Task.Run(() => _app.Service.Engine.RestoreAsync(set, new[] { (file.Key, file.Entry) }, null));
         Status = r.Failed.Count > 0 ? $"Could not restore {file.Name}. Is it open in another program?"
             : r.Restored == 0 ? $"{file.Name} is already this version."
             : $"Restored {file.Name}. The replaced copy was kept as a new version.";
