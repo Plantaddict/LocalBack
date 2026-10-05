@@ -120,6 +120,8 @@ localback-cli watch
 
 Settings and the index live in `%LOCALAPPDATA%\LocalBack` (override with `LOCALBACK_HOME`).
 
+Commands that write (`add`, `backup`, `restore`, `prune`, `remove`, `watch`) need the tray app to be closed: only one process may run the engine on the same index and drive. Read-only commands work alongside it.
+
 ## Decisions made while building
 
 - **Manifests are gzip-compressed** (`*.json.gz`). Every snapshot lists every file, so this keeps live snapshots of large sets small on the drive.
