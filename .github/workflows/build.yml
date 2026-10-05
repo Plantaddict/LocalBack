@@ -8,6 +8,11 @@ on:
 permissions:
   contents: write
 
+# One build per branch at a time; a newer push cancels the older run (they raced on the release step).
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -104,8 +109,14 @@ jobs:
         run: |
           $setup = (Get-Item publish/LocalBack-Setup-*.exe).FullName
           $notes = "Built from " + $env:GITHUB_SHA.Substring(0, 7) + " on branch " + $env:GITHUB_REF_NAME + ". Per-user install, no admin rights needed. Windows 10/11 x64."
-          gh release delete latest --yes --cleanup-tag 2>$null
-          gh release create latest $setup --prerelease --target $env:GITHUB_SHA --title "LocalBack latest build" --notes $notes
+          gh release view latest *> $null
+          if ($LASTEXITCODE) {
+            gh release create latest $setup --prerelease --target $env:GITHUB_SHA --title "LocalBack latest build" --notes $notes
+          } else {
+            gh release upload latest $setup --clobber
+            if ($LASTEXITCODE) { throw "upload failed" }
+            gh release edit latest --notes $notes --prerelease
+          }
           if ($LASTEXITCODE) { throw "release failed" }
 
   linux-engine:
