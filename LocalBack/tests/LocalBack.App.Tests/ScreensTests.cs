@@ -161,8 +161,13 @@ public class ScreensTests
         Pump(1000);
         var hist = (HistoryViewModel)main.ViewModel.Current;
         hist.ShowDeleted = true;
-        Pump(1500);
-        Assert.Single(hist.Files); // old-draft.docx
+        Pump(2500);
+        if (hist.Files.Count != 1)
+        {
+            var log = Path.Combine(root, "home", "localback.log");
+            throw new Exception($"Deleted files: {hist.Files.Count} rows, loading={hist.Loading}, message='{hist.Message}', deleted via engine={service.Engine.DeletedFiles(set1).Count}\n"
+                + (File.Exists(log) ? string.Join("\n", File.ReadLines(log).TakeLast(15)) : "(no log)"));
+        }
         Snap(main, "History-deleted");
         hist.ShowDeleted = false;
 

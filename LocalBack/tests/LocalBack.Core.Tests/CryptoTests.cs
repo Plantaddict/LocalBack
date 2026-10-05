@@ -269,3 +269,22 @@ public class DeletedFilesAndCopyTests
         Assert.Empty(Directory.Exists(Path.Combine(env.Drive.Blobs.Root, "tmp")) ? Directory.GetFiles(Path.Combine(env.Drive.Blobs.Root, "tmp")) : Array.Empty<string>());
     }
 }
+
+public class DeletedFilesSingleVersionTests
+{
+    [Fact]
+    public async Task A_file_with_one_version_that_is_deleted_is_listed()
+    {
+        using var env = new TestEnv();
+        var gone = env.Write("old-draft.docx", "draft", secondsAgo: 100);
+        env.Write("notes.txt", "n", secondsAgo: 100);
+        await env.Engine.BackupAsync(env.Set, LocalBack.Core.Storage.SnapshotTrigger.FirstBackup);
+        File.Delete(gone);
+        env.Write("new.txt", "x", secondsAgo: 60);
+        await env.Engine.BackupAsync(env.Set, LocalBack.Core.Storage.SnapshotTrigger.Live);
+
+        var deleted = env.Engine.DeletedFiles(env.Set);
+        var d = Assert.Single(deleted);
+        Assert.Equal("old-draft.docx", d.Name);
+    }
+}

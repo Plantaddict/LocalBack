@@ -309,8 +309,10 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
             _deleted = list;
             ApplyFilter();
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DriveNotAvailableException or DriveLockedException)
+        catch (Exception ex)
         {
+            // Anything here would otherwise vanish with the discarded task; show it instead.
+            Log.Error("Listing deleted files failed", ex);
             Message = ex.Message;
         }
         finally
