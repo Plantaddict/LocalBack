@@ -4,7 +4,7 @@
         xmlns:c="clr-namespace:LocalBack.App.Controls"
         xmlns:l="clr-namespace:LocalBack.App.Localization"
         xmlns:v="clr-namespace:LocalBack.App.Views"
-        Title="{Binding Title}" Width="456" Height="316" Icon="pack://application:,,,/LocalBack;component/Assets/LocalBack.ico" WindowStartupLocation="CenterScreen">
+        Title="{Binding Title}" Width="456" SizeToContent="Height" Icon="pack://application:,,,/LocalBack;component/Assets/LocalBack.ico" WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="Vis"/>
     </Window.Resources>

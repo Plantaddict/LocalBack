@@ -182,7 +182,7 @@
   "addset.browse": "Folder lub udział…",
   "addset.run": "Uruchamiaj",
   "addset.exclude": "Pomijaj",
-  "addset.rulesOn": "Reguł włączonych: {0} · pliki w trakcie zapisu trafią do kopii w następnym przebiegu",
+  "addset.rulesOn": "Reguł: {0} · pliki w trakcie zapisu trafią do kopii później",
   "addset.customPlaceholder": "Własny wzorzec, np. *.iso lub Renders/",
   "addset.add": "Dodaj",
   "addset.keepHistory": "Zachowuj historię wersji (starsze kopie zmienionych plików)",

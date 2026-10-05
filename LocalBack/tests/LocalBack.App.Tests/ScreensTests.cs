@@ -183,7 +183,8 @@ public class ScreensTests
         unlock.Close();
 
         Step("polish");
-        Localization.Loc.Instance.Apply("pl");
+        service.Settings.Language = "pl";
+        app.ApplyLanguage();
         main.ViewModel.Navigate(Page.Sets);
         Pump(500);
         Snap(main, "Main-pl");
@@ -192,7 +193,8 @@ public class ScreensTests
         Pump(500);
         Snap(addPl, "AddSet-pl");
         addPl.Close();
-        Localization.Loc.Instance.Apply("en");
+        service.Settings.Language = "en";
+        app.ApplyLanguage();
 
         Step("close");
         main.Close();
