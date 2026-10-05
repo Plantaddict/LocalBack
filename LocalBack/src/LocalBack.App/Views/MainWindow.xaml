@@ -5,7 +5,7 @@
         xmlns:vm="clr-namespace:LocalBack.App.ViewModels"
         xmlns:v="clr-namespace:LocalBack.App.Views"
         Title="{Binding Title}" Width="900" Height="600" MinWidth="760" MinHeight="480"
-        WindowStartupLocation="CenterScreen" Icon="/Assets/LocalBack.ico"
+        WindowStartupLocation="CenterScreen" Icon="pack://application:,,,/LocalBack;component/Assets/LocalBack.ico"
         FontFamily="{StaticResource UiFont}" FontSize="14" Foreground="{StaticResource Text}"
         Background="{StaticResource Surface}" UseLayoutRounding="True">
     <WindowChrome.WindowChrome>

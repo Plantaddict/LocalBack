@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:LocalBack.App.Controls"
         xmlns:v="clr-namespace:LocalBack.App.Views"
-        Title="{Binding Title}" Width="536" Height="816" Icon="/Assets/LocalBack.ico">
+        Title="{Binding Title}" Width="536" Height="816" Icon="pack://application:,,,/LocalBack;component/Assets/LocalBack.ico">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="Vis"/>
     </Window.Resources>

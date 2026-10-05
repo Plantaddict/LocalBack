@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:LocalBack.App.Controls"
         xmlns:v="clr-namespace:LocalBack.App.Views"
-        Title="Free up space" Width="536" Height="616" Icon="/Assets/LocalBack.ico" WindowStartupLocation="CenterScreen">
+        Title="Free up space" Width="536" Height="616" Icon="pack://application:,,,/LocalBack;component/Assets/LocalBack.ico" WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="Vis"/>
     </Window.Resources>
