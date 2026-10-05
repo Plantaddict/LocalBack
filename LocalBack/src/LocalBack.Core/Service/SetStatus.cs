@@ -4,7 +4,7 @@ using LocalBack.Core.Util;
 
 namespace LocalBack.Core.Service;
 
-public enum SetHealth { UpToDate, Pending, Running, DriveMissing, Paused, Error, NeverRun, Disabled, Locked }
+public enum SetHealth { UpToDate, Pending, Running, DriveMissing, Paused, Error, NeverRun, Disabled, Locked, Encrypting }
 
 public sealed record SetStatus(
     BackupSet Set,
@@ -26,6 +26,7 @@ public sealed record SetStatus(
         SetHealth.Error => "Last backup failed",
         SetHealth.Disabled => "Browse only",
         SetHealth.Locked => "Needs password",
+        SetHealth.Encrypting => "Encrypting backups…",
         _ => "Not backed up yet",
     };
 
@@ -41,6 +42,7 @@ public sealed record SetStatus(
     public string ShortWhen => Health switch
     {
         SetHealth.Running => "Running",
+        SetHealth.Encrypting => "Encrypting",
         SetHealth.Error => "Failed",
         SetHealth.Disabled => "Browse only",
         SetHealth.Locked => "Locked",

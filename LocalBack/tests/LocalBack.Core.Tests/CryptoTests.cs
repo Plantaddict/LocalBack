@@ -182,6 +182,126 @@ public class EncryptedDestinationTests
     }
 }
 
+public class ProtectLaterTests
+{
+    private static IEnumerable<string> DataFiles(string root) =>
+        Directory.EnumerateFiles(Path.Combine(root, "LocalBack"), "*", SearchOption.AllDirectories)
+            .Where(f => Path.GetFileName(f) is not ("drive.json" or "set.json" or "snapshots.jsonl") && Path.GetFileName(Path.GetDirectoryName(f)) != "tmp");
+
+    [Fact]
+    public async Task A_password_can_be_added_to_a_destination_already_holding_plain_backups()
+    {
+        using var env = new TestEnv();
+        KeyStore.Init(Path.Combine(env.Dir, "home"));
+        var secret = "plain before, encrypted after " + new string('q', 3000);
+        env.Write("a.txt", secret);
+        env.Write("sub/b.txt", "second file");
+        await env.Backup();
+        env.Write("a.txt", secret + " v2");
+        await env.Backup();
+        Assert.All(DataFiles(env.Usb), f => Assert.False(ChunkedAesGcm.LooksEncrypted(File.ReadAllBytes(f)), f));
+
+        var drive = env.Drive;
+        drive.Protect("later-pw");
+        Assert.True(drive.IsEncrypted);
+        Assert.True(drive.IsEncrypting);
+        Assert.False(drive.IsLocked);
+
+        // Half way: old files are still plain, new writes are encrypted, and everything stays readable.
+        env.Write("c.txt", "written after the password");
+        var r = await env.Backup();
+        Assert.NotNull(r.Snapshot);
+        var snaps = env.Engine.ListSnapshots(env.Set);
+        var mid = Path.Combine(env.Dir, "mid");
+        await env.Engine.RestoreSnapshotAsync(env.Set, snaps[^1].Name, mid);
+        Assert.Equal(secret + " v2", File.ReadAllText(Path.Combine(mid, "a.txt")));
+        Assert.Equal("written after the password", File.ReadAllText(Path.Combine(mid, "c.txt")));
+        Assert.Contains(DataFiles(env.Usb), f => !ChunkedAesGcm.LooksEncrypted(File.ReadAllBytes(f)));
+        Assert.Contains(DataFiles(env.Usb), f => ChunkedAesGcm.LooksEncrypted(File.ReadAllBytes(f)));
+
+        // Interrupted: a second call picks up where the first stopped (every file ends up encrypted exactly once).
+        var reports = new List<(int Done, int Total)>();
+        drive.EncryptPending(new SyncProgress(reports.Add));
+        Assert.False(DriveStore.TryOpen(env.Usb)!.IsEncrypting);
+        Assert.Equal(reports[^1].Total, reports[^1].Done);
+        Assert.All(DataFiles(env.Usb), f => Assert.True(ChunkedAesGcm.LooksEncrypted(File.ReadAllBytes(f)), f));
+        foreach (var f in DataFiles(env.Usb))
+            Assert.DoesNotContain("plain before", System.Text.Encoding.Latin1.GetString(File.ReadAllBytes(f)));
+
+        // Old snapshots still restore; nothing was double-encrypted.
+        var old = Path.Combine(env.Dir, "old");
+        await env.Engine.RestoreSnapshotAsync(env.Set, snaps[0].Name, old);
+        Assert.Equal(secret, File.ReadAllText(Path.Combine(old, "a.txt")));
+        Assert.Equal("second file", File.ReadAllText(Path.Combine(old, "sub", "b.txt")));
+
+        // Another PC needs the password now.
+        KeyStore.ClearForTests();
+        var locked = DriveStore.TryOpen(env.Usb)!;
+        Assert.True(locked.IsLocked);
+        Assert.Throws<CryptographicException>(() => locked.Set(env.Set.Id).ReadManifest(locked.Set(env.Set.Id).LatestManifestName()!));
+        Assert.True(locked.Unlock("later-pw", remember: false));
+        Assert.Throws<InvalidOperationException>(() => locked.Protect("again"));
+    }
+
+    [Fact]
+    public async Task The_service_encrypts_existing_backups_in_the_background_and_resumes_after_a_restart()
+    {
+        using var env = new TestEnv();
+        var home = Path.Combine(env.Dir, "home");
+        env.Write("a.txt", new string('a', 20000));
+        env.Write("b.txt", "bee");
+        using (var service = new BackupService(new AppPaths(home, Path.Combine(env.Dir, "tmp"))))
+        {
+            service.Start(checkOnStartup: false);
+            var set = service.AddSet("Docs", new[] { env.Source }, env.Usb, RunSchedule.Live, ExclusionRules.DefaultEnabled, Array.Empty<string>(), true);
+            await service.BackUpNowAsync(set);
+            Assert.Equal(SetHealth.UpToDate, service.GetStatus(set).Health);
+
+            service.ProtectDrive(service.DriveFor(set)!, "svc-pw");
+            var until = DateTime.UtcNow.AddSeconds(20);
+            while (service.IsBusy && DateTime.UtcNow < until) await Task.Delay(50);
+            Assert.False(service.IsBusy);
+            Assert.False(service.DriveFor(set)!.IsEncrypting);
+            Assert.Equal(SetHealth.UpToDate, service.GetStatus(set).Health);
+            Assert.All(DataFiles(env.Usb), f => Assert.True(ChunkedAesGcm.LooksEncrypted(File.ReadAllBytes(f)), f));
+        }
+
+        // Simulate an interrupted run: mark the drive as still encrypting and drop one blob back to plaintext.
+        var drive = DriveStore.TryOpen(env.Usb)!;
+        var hash = drive.Blobs.EnumerateAll().First().Hash;
+        var plain = new MemoryStream();
+        using (var src = drive.Blobs.OpenRead(hash)) src.CopyTo(plain);
+        File.WriteAllBytes(drive.Blobs.PathFor(hash), plain.ToArray());
+        var identityFile = Path.Combine(env.Usb, "LocalBack", "drive.json");
+        File.WriteAllText(identityFile, File.ReadAllText(identityFile).Replace("\"encrypting\":false", "\"encrypting\":true"));
+        Assert.True(DriveStore.TryOpen(env.Usb)!.IsEncrypting);
+
+        using (var service = new BackupService(new AppPaths(home, Path.Combine(env.Dir, "tmp"))))
+        {
+            service.Start(checkOnStartup: false);
+            var set = service.Sets.Single();
+            var until = DateTime.UtcNow.AddSeconds(20);
+            while ((service.IsBusy || service.DriveFor(set)!.IsEncrypting) && DateTime.UtcNow < until)
+            {
+                await Task.Delay(50);
+                service.RefreshAll();
+            }
+            Assert.False(DriveStore.TryOpen(env.Usb)!.IsEncrypting);
+            Assert.True(ChunkedAesGcm.LooksEncrypted(File.ReadAllBytes(drive.Blobs.PathFor(hash))));
+            var target = Path.Combine(env.Dir, "out");
+            await service.Engine.RestoreSnapshotAsync(set, service.Engine.ListSnapshots(set)[^1].Name, target);
+            Assert.Equal(new string('a', 20000), File.ReadAllText(Path.Combine(target, "a.txt")));
+        }
+    }
+
+    private sealed class SyncProgress : IProgress<(int Done, int Total)>
+    {
+        private readonly Action<(int Done, int Total)> _report;
+        public SyncProgress(Action<(int Done, int Total)> report) => _report = report;
+        public void Report((int Done, int Total) value) => _report(value);
+    }
+}
+
 public class DestinationTests
 {
     [Fact]

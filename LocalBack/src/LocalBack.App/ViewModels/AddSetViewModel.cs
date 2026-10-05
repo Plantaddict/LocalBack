@@ -126,20 +126,23 @@ public sealed class AddSetViewModel : ObservableObject
             if (!Set(ref _destState, value)) return;
             Raise(nameof(ShowProtect));
             Raise(nameof(ShowPasswordFields));
+            Raise(nameof(PasswordHint));
             Raise(nameof(ShowUnlock));
             Raise(nameof(DestinationNote));
             Raise(nameof(HasDestinationNote));
         }
     }
 
-    /// <summary>"Protect with a password" is offered only for a destination used for the first time.</summary>
-    public bool ShowProtect => DestState == DestinationState.New;
+    /// <summary>"Protect with a password" is offered for a new destination and for one used without a password so far.</summary>
+    public bool ShowProtect => DestState is DestinationState.New or DestinationState.Plain;
     public bool Protect
     {
         get => _protect;
         set { if (Set(ref _protect, value)) { Raise(nameof(ShowPasswordFields)); Error = ""; } }
     }
-    public bool ShowPasswordFields => DestState == DestinationState.New && Protect;
+    public bool ShowPasswordFields => ShowProtect && Protect;
+    /// <summary>Under the password fields: what a password means for backups already on the destination.</summary>
+    public string PasswordHint => Loc.T(DestState == DestinationState.Plain ? "addset.password.plainHint" : "addset.password.hint");
     public bool ShowUnlock => DestState == DestinationState.Locked;
     public string DestinationNote => DestState switch
     {

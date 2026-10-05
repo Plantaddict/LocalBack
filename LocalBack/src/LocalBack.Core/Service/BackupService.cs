@@ -30,6 +30,10 @@ public sealed class BackupService : IDisposable
     private volatile bool _stopping;
     private string? _runningSetId;
     private BackupProgress? _progress;
+    /// <summary>Destinations whose existing backups are being encrypted: drive id → (done, total) or null while queued.</summary>
+    private readonly Dictionary<string, (int Done, int Total)?> _encrypting = new();
+    private readonly Queue<DriveStore> _encryptJobs = new();
+    private readonly Dictionary<string, DateTimeOffset> _encryptRetryAfter = new();
 
     public AppSettings Settings { get; private set; }
     public BackupEngine Engine { get; }
@@ -44,6 +48,9 @@ public sealed class BackupService : IDisposable
     /// <summary>Delay before files that were in use are tried again; doubles on each failed retry up to <see cref="DeferredRetryMax"/>.</summary>
     public TimeSpan DeferredRetry { get; set; } = TimeSpan.FromSeconds(30);
     public TimeSpan DeferredRetryMax { get; set; } = TimeSpan.FromMinutes(30);
+
+    /// <summary>Wait before encrypting a destination's existing backups is tried again after a failure.</summary>
+    public TimeSpan EncryptRetry { get; set; } = TimeSpan.FromMinutes(5);
 
     public event Action? StatusChanged;
     public event Action<LowSpaceInfo>? LowSpace;
@@ -140,6 +147,10 @@ public sealed class BackupService : IDisposable
         {
             if (string.IsNullOrEmpty(password) || !existing.Unlock(password))
                 throw new DriveLockedException(name, driveRoot);
+        }
+        else if (existing != null && !existing.IsEncrypted && !string.IsNullOrEmpty(password))
+        {
+            ProtectDrive(existing, password);
         }
         var driveRef = DriveLocator.Register(driveRoot, password);
         var store = DriveStore.TryOpen(driveRoot) ?? DriveStore.OpenOrCreate(driveRoot);
@@ -308,6 +319,69 @@ public sealed class BackupService : IDisposable
         RaiseStatus();
     }
 
+    /// <summary>
+    /// Adds a password to a destination already holding plain backups. Returns at once; the backups on it are
+    /// encrypted by the worker, with progress in <see cref="EncryptProgress"/>, and sets on it show
+    /// <see cref="SetHealth.Encrypting"/> until that is done. Interrupted work resumes on the next start or unlock.
+    /// </summary>
+    public void ProtectDrive(DriveStore drive, string password)
+    {
+        drive.Protect(password);
+        Log.Info($"Password added to destination {drive.DriveRoot}; encrypting existing backups");
+        RefreshAll();
+        QueueEncryption(drive);
+        RaiseStatus();
+    }
+
+    /// <summary>(done, total) while a destination's existing backups are being encrypted, null otherwise.</summary>
+    public (int Done, int Total)? EncryptProgress(DriveStore drive)
+    {
+        lock (_gate) return _encrypting.TryGetValue(drive.Identity.Id, out var p) ? p ?? (0, 0) : null;
+    }
+
+    public bool IsEncrypting(DriveStore drive)
+    {
+        lock (_gate) return _encrypting.ContainsKey(drive.Identity.Id);
+    }
+
+    private void QueueEncryption(DriveStore drive)
+    {
+        if (!drive.IsEncrypting || drive.IsLocked) return;
+        lock (_gate)
+        {
+            if (_encryptRetryAfter.TryGetValue(drive.Identity.Id, out var after) && after > DateTimeOffset.UtcNow) return;
+            if (!_encrypting.TryAdd(drive.Identity.Id, null)) return;
+            _encryptJobs.Enqueue(drive);
+        }
+        _signal.Set();
+    }
+
+    private void RunEncryption(DriveStore drive)
+    {
+        var id = drive.Identity.Id;
+        var progress = new Progress<(int, int)>(p =>
+        {
+            lock (_gate) _encrypting[id] = p;
+            RaiseStatus();
+        });
+        try
+        {
+            drive.EncryptPending(progress);
+            Log.Info($"Finished encrypting backups on {drive.DriveRoot}");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            // The drive went away or a file was busy: what is done stays done; the rest is picked up next time.
+            Log.Warn($"Encrypting backups on {drive.DriveRoot} stopped: {ex.Message}");
+            lock (_gate) _encryptRetryAfter[id] = DateTimeOffset.UtcNow + EncryptRetry;
+        }
+        finally
+        {
+            lock (_gate) _encrypting.Remove(id);
+        }
+        RefreshAll();
+    }
+
     /// <summary>"Back up now" for one set or all of them. Completes when the runs finish.</summary>
     public Task BackUpNowAsync(BackupSet? only = null)
     {
@@ -429,6 +503,18 @@ public sealed class BackupService : IDisposable
         {
             (BackupSet Set, WorkItem Item)? next = null;
             TimeSpan wait = Timeout.InfiniteTimeSpan;
+            DriveStore? encrypt = null;
+            lock (_gate)
+            {
+                if (_encryptJobs.Count > 0) encrypt = _encryptJobs.Dequeue();
+            }
+            if (encrypt != null)
+            {
+                RaiseStatus();
+                RunEncryption(encrypt);
+                RaiseStatus();
+                continue;
+            }
             lock (_gate)
             {
                 var now = DateTimeOffset.UtcNow;
@@ -723,7 +809,7 @@ public sealed class BackupService : IDisposable
     public BackupProgress? CurrentProgress => _progress;
     public bool IsBusy
     {
-        get { lock (_gate) return _runningSetId != null || _work.Count > 0; }
+        get { lock (_gate) return _runningSetId != null || _work.Count > 0 || _encrypting.Count > 0; }
     }
 
     public string? RunningSetName
@@ -760,6 +846,7 @@ public sealed class BackupService : IDisposable
                 var snaps = drive.Set(set.Id).Snapshots();
                 latest = snaps.LastOrDefault();
                 versions = snaps.Count;
+                if (drive.IsEncrypting) QueueEncryption(drive);
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -791,6 +878,7 @@ public sealed class BackupService : IDisposable
             : !set.Enabled ? SetHealth.Disabled
             : c.Drive == null ? SetHealth.DriveMissing
             : c.Drive.IsLocked ? SetHealth.Locked
+            : IsEncrypting(c.Drive) ? SetHealth.Encrypting
             : IsPaused ? SetHealth.Paused
             : state.LastError != null ? SetHealth.Error
             : pending > 0 || queued ? SetHealth.Pending

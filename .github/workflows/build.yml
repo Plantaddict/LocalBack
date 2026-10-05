@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  APP_VERSION: 0.2.0
+
 # One build per branch at a time; a newer push cancels the older run (they raced on the release step).
 concurrency:
   group: build-${{ github.ref }}
@@ -40,10 +43,10 @@ jobs:
           if-no-files-found: ignore
       - name: Publish app
         if: hashFiles('LocalBack/src/LocalBack.App/LocalBack.App.csproj') != ''
-        run: dotnet publish src/LocalBack.App -c Release -r win-x64 --self-contained -o publish/LocalBack
+        run: dotnet publish src/LocalBack.App -c Release -r win-x64 --self-contained -o publish/LocalBack -p:Version=${{ env.APP_VERSION }}.${{ github.run_number }}
       - name: Publish CLI
         run: |
-          dotnet publish src/LocalBack.Cli -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish/cli
+          dotnet publish src/LocalBack.Cli -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish/cli -p:Version=${{ env.APP_VERSION }}.${{ github.run_number }}
           Copy-Item publish/cli/localback-cli.exe publish/LocalBack/
       - name: Smoke test the published app
         shell: pwsh
@@ -79,7 +82,7 @@ jobs:
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
-          & $iscc installer/LocalBack.iss /DAppVersion=0.1.0
+          & $iscc installer/LocalBack.iss /DAppVersion=$env:APP_VERSION /DBuildNumber=$env:GITHUB_RUN_NUMBER
           if ($LASTEXITCODE) { throw "ISCC failed" }
       - name: Install and uninstall silently
         shell: pwsh
@@ -108,7 +111,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $setup = (Get-Item publish/LocalBack-Setup-*.exe).FullName
-          $notes = "Built from " + $env:GITHUB_SHA.Substring(0, 7) + " on branch " + $env:GITHUB_REF_NAME + ". Per-user install, no admin rights needed. Windows 10/11 x64."
+          $notes = "Version " + $env:APP_VERSION + " build " + $env:GITHUB_RUN_NUMBER + ", from " + $env:GITHUB_SHA.Substring(0, 7) + " on branch " + $env:GITHUB_REF_NAME + ". Settings shows the same version and build number. Per-user install, no admin rights needed. Windows 10/11 x64."
           gh release view latest *> $null
           if ($LASTEXITCODE) {
             gh release create latest $setup --prerelease --target $env:GITHUB_SHA --title "LocalBack latest build" --notes $notes
@@ -116,6 +119,11 @@ jobs:
             gh release upload latest $setup --clobber
             if ($LASTEXITCODE) { throw "upload failed" }
             gh release edit latest --notes $notes --prerelease
+            # Only the current installer stays attached (an older version name would otherwise linger).
+            $keep = [IO.Path]::GetFileName($setup)
+            foreach ($name in (gh release view latest --json assets --jq '.assets[].name')) {
+              if ($name -and $name -ne $keep) { gh release delete-asset latest $name --yes }
+            }
           }
           if ($LASTEXITCODE) { throw "release failed" }
 

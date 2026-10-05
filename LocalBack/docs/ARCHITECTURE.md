@@ -23,6 +23,7 @@ Hashing: SHA-256 (or BLAKE3 if Rust). Hash only when size or mtime differs from 
 ## Encryption (optional, per destination)
 
 - `drive.json` carries `password`: PBKDF2-SHA256 salt and rounds, and the 32-byte data key wrapped with AES-256-GCM under the password-derived key. Unwrapping with the wrong password fails authentication; nothing else on the destination is tried.
+- A password can be added later (`DriveStore.Protect`). From then on new blobs and manifests are encrypted; `EncryptPending` rewrites the existing ones in place and clears the `encrypting` flag when done. The service runs it on its worker thread (sets on that drive show "Encrypting backups…") and re-queues it on start or unlock if it was interrupted. `BlobStore.OpenRead` and `Manifest.Read` look at the first four bytes ("LBE1") to tell encrypted from plain, so the mix is readable throughout.
 - Blobs and manifests are containers of 1 MiB AES-256-GCM chunks: `"LBE1"`, an 8-byte random nonce prefix, then `[last:1][length:4][ciphertext][tag:16]` per chunk. The chunk index and the last-chunk flag are authenticated, so chunks cannot be reordered, dropped or truncated.
 - Blob names are still SHA-256 of the plaintext, so deduplication works unchanged. (Someone with the drive can tell that two encrypted blobs have the same content, not what it is.)
 - The data key of an unlocked destination is kept in memory and in `keys.json` in the data folder (DPAPI, current user). `set.json` and `snapshots.jsonl` are not encrypted.

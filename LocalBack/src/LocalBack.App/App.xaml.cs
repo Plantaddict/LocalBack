@@ -149,7 +149,7 @@ public partial class App : Application
     public static SetHealth Worst(IReadOnlyList<SetStatus> statuses)
     {
         if (statuses.Any(s => s.Health == SetHealth.Running)) return SetHealth.Running;
-        foreach (var h in new[] { SetHealth.Error, SetHealth.Locked, SetHealth.DriveMissing, SetHealth.Paused, SetHealth.Pending, SetHealth.NeverRun })
+        foreach (var h in new[] { SetHealth.Error, SetHealth.Locked, SetHealth.DriveMissing, SetHealth.Encrypting, SetHealth.Paused, SetHealth.Pending, SetHealth.NeverRun })
             if (statuses.Any(s => s.Health == h)) return h;
         // Browse-only sets do not count against "everything is backed up".
         if (statuses.All(s => s.Health == SetHealth.Disabled)) return SetHealth.Disabled;
@@ -193,6 +193,16 @@ public partial class App : Application
     public bool ShowUnlock(DriveStore drive)
     {
         var dlg = new UnlockWindow(drive);
+        if (_main != null) dlg.Owner = _main;
+        var ok = dlg.ShowDialog() == true;
+        if (ok) FlushStatus();
+        return ok;
+    }
+
+    /// <summary>Asks for a new password for a destination used without one so far. True when it was set.</summary>
+    public bool ShowProtect(DriveStore drive)
+    {
+        var dlg = new ProtectWindow(drive);
         if (_main != null) dlg.Owner = _main;
         var ok = dlg.ShowDialog() == true;
         if (ok) FlushStatus();

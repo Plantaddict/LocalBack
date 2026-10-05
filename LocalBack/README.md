@@ -10,7 +10,7 @@ A small Windows tray app that keeps a versioned backup of chosen folders on an e
 - Stays out of the way: debounced change detection, temp-file exclusions, metadata-only rescans, low-priority I/O.
 - Warns when the drive is almost full and offers to thin out old copies of the same file.
 - Destination can be a drive, a folder on a drive, or a network share (`\\nas\backups`).
-- Optional password protection: everything on the destination is encrypted (AES-256-GCM); the key is unlocked by the password and kept on the PC so backups keep running.
+- Optional password protection: everything on the destination is encrypted (AES-256-GCM); the key is unlocked by the password and kept on the PC so backups keep running. A password can be added when a destination is first used or later (Drives → "Add password…"); backups already there are encrypted in the background.
 - Deleted files keep their last copy; History → "Deleted files" lists them with "Bring back".
 - English and Polish; follows the Windows display language, switchable in Settings.
 
@@ -38,7 +38,7 @@ The real app, rendered on Windows by the UI test (`docs/screenshots/`, refreshed
 | ![Add backup set](docs/screenshots/AddSet.png) | ![Free up space](docs/screenshots/FreeSpace.png) |
 | ![Tray flyout](docs/screenshots/Tray.png) | ![Settings](docs/screenshots/Settings.png) |
 | ![Deleted files](docs/screenshots/History-deleted.png) | ![Unlock](docs/screenshots/Unlock.png) |
-| ![Browsing a snapshot by folder](docs/screenshots/History-folders.png) | |
+| ![Browsing a snapshot by folder](docs/screenshots/History-folders.png) | ![Add a password later](docs/screenshots/Protect.png) |
 | ![Main window in Polish](docs/screenshots/Main-pl.png) | ![Add backup set in Polish](docs/screenshots/AddSet-pl.png) |
 
 ## Stack
@@ -92,7 +92,7 @@ Installer (Windows, Inno Setup 6):
 ```
 dotnet publish src/LocalBack.Cli -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -o publish/cli
 copy publish\cli\localback-cli.exe publish\LocalBack\
-iscc installer\LocalBack.iss /DAppVersion=0.1.0      # -> publish\LocalBack-Setup-0.1.0.exe
+iscc installer\LocalBack.iss /DAppVersion=0.2.0 /DBuildNumber=1   # -> publish\LocalBack-Setup-0.2.0.exe
 ```
 
 It installs to `%LOCALAPPDATA%\Programs\LocalBack` without admin rights. Uninstalling removes the autostart and Explorer entries and keeps settings and all backups.
@@ -140,7 +140,7 @@ Commands that write (`add`, `backup`, `restore`, `prune`, `remove`, `watch`) nee
 - **On battery**, live changes are batched to at most one run every 15 minutes (Settings, on by default).
 - **Trimming is off**: WPF does not support it. The build is self-contained, single-file, ReadyToRun and compressed instead.
 - **Version history has two views of a snapshot.** *Changes* lists what the snapshot added, modified or deleted. *Folders* browses it like a drive in Explorer: address bar with back/forward/up, a details list with the shell's own icons and type names, double-click to open a folder or a read-only copy of a file, right-click to restore files or whole folders in place or to another folder. Search in the Folders view looks through the current folder and everything below it. The choice is remembered.
-- **Encryption is chosen when a destination is first used.** A random data key encrypts files and snapshot lists; the password only wraps that key (PBKDF2-SHA256, 600 000 rounds), so changing the password is instant and there is no way to recover a lost one. `set.json` and the snapshot summary list (`snapshots.jsonl`: dates and counts) stay in clear so a destination can be recognised and listed without the password; file names and contents do not.
+- **Encryption can be turned on at any time, never off.** A random data key encrypts files and snapshot lists; the password only wraps that key (PBKDF2-SHA256, 600 000 rounds), so changing the password is instant and there is no way to recover a lost one. `set.json` and the snapshot summary list (`snapshots.jsonl`: dates and counts) stay in clear so a destination can be recognised and listed without the password; file names and contents do not. Adding a password to a destination that already holds backups re-encrypts them one file at a time in the background (`drive.json` carries `encrypting` until done); reads accept plain and encrypted files alike meanwhile, so an interrupted run simply resumes.
 - **The key stays on the PC** (`keys.json`, protected with DPAPI for the signed-in user) so live backups run unattended. Another PC asks for the password; "Forget password on this PC" in a set's menu removes the saved key.
 - **Network shares** get no plug-in event, so a share that is away is tried again every few minutes.
 - **UI text lives in `src/LocalBack.App/Localization/strings-<lang>.json`.** Adding a language is one file plus a line in `Loc.Available`.

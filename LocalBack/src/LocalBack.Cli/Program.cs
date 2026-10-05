@@ -31,7 +31,7 @@ public static class Program
           localback-cli remove SET [--delete-backups]        Stop backing up a set
           localback-cli unlock SET [--password PW]           Enter the password of an encrypted destination
           localback-cli lock SET                             Forget the saved password on this PC
-          localback-cli set-password SET                     Change the password of an encrypted destination
+          localback-cli set-password SET                     Add a password to a destination, or change it
           localback-cli watch                                Run in the foreground: watch, schedule, back up
 
         SNAPSHOT is a name from "snapshots", "latest", or a number (1 = newest).
@@ -122,7 +122,7 @@ public static class Program
             if (LocalBack.Core.Scanning.ExclusionFilter.Validate(p) is { } err) throw new ArgumentException($"{p}: {err}");
         var password = a.Option("--password");
         var store = LocalBack.Core.Storage.DriveStore.TryOpen(PathUtil.NormalizeFolder(drive));
-        if (store == null && password == null && !Console.IsInputRedirected)
+        if (store is null or { IsEncrypted: false } && password == null && !Console.IsInputRedirected)
         {
             Console.Write("Protect this destination with a password? Leave empty for no encryption: ");
             password = ReadPassword();
@@ -185,7 +185,23 @@ public static class Program
     {
         var set = FindSet(service, a.Positional(0) ?? throw new ArgumentException("Which set?"));
         var drive = LocalBack.Core.Drives.DriveLocator.Find(set.Drive) ?? throw new DriveNotAvailableException(set.Name, set.Drive.LastRoot);
-        if (!drive.IsEncrypted) return Fail("That destination is not encrypted. Encryption is chosen when a destination is first used.");
+        if (!drive.IsEncrypted)
+        {
+            // A destination used without a password so far: add one and encrypt what is already there.
+            Console.Write("This destination is not encrypted. New password: ");
+            var pw = ReadPassword();
+            if (pw.Length < 8) return Fail("Use at least 8 characters.");
+            Console.Write("Repeat the new password: ");
+            if (ReadPassword() != pw) return Fail("The passwords do not match.");
+            drive.Protect(pw);
+            Console.WriteLine("Password set. Encrypting the backups already on it…");
+            drive.EncryptPending(new Progress<(int Done, int Total)>(p =>
+            {
+                if (p.Total > 0 && (p.Done % 50 == 0 || p.Done == p.Total)) Console.WriteLine($"  {p.Done} of {p.Total}");
+            }));
+            Console.WriteLine("Done. Everything on this destination is now encrypted.");
+            return 0;
+        }
         Console.Write("Current password: ");
         var current = ReadPassword();
         Console.Write("New password: ");

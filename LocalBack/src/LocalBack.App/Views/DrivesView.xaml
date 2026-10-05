@@ -30,6 +30,8 @@
                                         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
                                             <Button Style="{StaticResource BtnSecondarySm}" Content="{l:T drives.unlock}" Command="{Binding Unlock}"
                                                     Visibility="{Binding IsLocked, Converter={StaticResource Vis}}"/>
+                                            <Button Style="{StaticResource BtnSecondarySm}" Content="{l:T drives.protect}" Command="{Binding Protect}" Margin="0,0,8,0"
+                                                    Visibility="{Binding CanProtect, Converter={StaticResource Vis}}"/>
                                             <Button Style="{StaticResource BtnSecondarySm}" Content="{l:T drives.freeUp}" Command="{Binding FreeUp}"
                                                     Visibility="{Binding IsBackupDrive, Converter={StaticResource Vis}}"/>
                                         </StackPanel>

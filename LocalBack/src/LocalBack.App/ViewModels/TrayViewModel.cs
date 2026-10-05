@@ -62,6 +62,7 @@ public sealed class TrayViewModel : ObservableObject, IDisposable
                 SetHealth.Error => (Loc.T("tray.headline.error"), "red"),
                 SetHealth.DriveMissing => (Loc.T("tray.headline.driveMissing"), "amber"),
                 SetHealth.Locked => (Loc.T("tray.headline.locked"), "amber"),
+                SetHealth.Encrypting => (Loc.T("tray.headline.encrypting", statuses.First(s => s.Health == SetHealth.Encrypting).DriveName), "blue"),
                 SetHealth.Paused => (Loc.T("tray.headline.paused", service.Settings.PausedUntil!.Value.ToLocalTime().ToString("HH:mm")), "amber"),
                 SetHealth.NeverRun => (Loc.T("tray.headline.first"), "amber"),
                 SetHealth.Disabled => (Loc.T("tray.headline.disabled"), "amber"),

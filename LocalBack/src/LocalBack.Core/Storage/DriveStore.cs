@@ -29,6 +29,8 @@ public sealed class DriveStore
     public bool IsEncrypted => Identity.Password != null;
     /// <summary>Encrypted, and the key is not known on this PC: the password is needed.</summary>
     public bool IsLocked => IsEncrypted && Key == null;
+    /// <summary>A password was added to a destination that already held backups, and some are still plain.</summary>
+    public bool IsEncrypting => Identity.Encrypting;
 
     private DriveStore(string driveRoot)
     {
@@ -88,6 +90,55 @@ public sealed class DriveStore
         return true;
     }
 
+    /// <summary>
+    /// Adds a password to a destination that was used without one. New writes are encrypted at once; the backups
+    /// already there are encrypted by <see cref="EncryptPending"/>, which can be interrupted and resumed because
+    /// reads accept plain and encrypted files alike until it finishes.
+    /// </summary>
+    public void Protect(string password)
+    {
+        if (string.IsNullOrEmpty(password)) throw new ArgumentException("A password is needed.", nameof(password));
+        var id = Identity;
+        if (id.Password != null) throw new InvalidOperationException("This destination is already encrypted.");
+        var key = PasswordKey.NewDataKey();
+        id.Password = PasswordKey.Wrap(key, password);
+        id.Encrypting = true;
+        AtomicFile.WriteAllText(IdentityFile, JsonSerializer.Serialize(id));
+        _identity = id;
+        KeyStore.Remember(id.Id, key, persist: true);
+        Blobs.Key = key;
+    }
+
+    /// <summary>
+    /// Encrypts whatever <see cref="Protect"/> left plain: every blob and manifest on the destination. Safe to call
+    /// again after an interruption; files already encrypted are skipped. Reports (done, total) as it goes.
+    /// </summary>
+    public void EncryptPending(IProgress<(int Done, int Total)>? progress = null, CancellationToken ct = default)
+    {
+        if (!IsEncrypting) return;
+        var key = Key ?? throw new InvalidOperationException("The destination is locked.");
+        var blobs = Blobs.EnumerateAll().Select(b => b.Hash).ToList();
+        var manifests = Sets().SelectMany(set => set.ManifestNames().Select(n => Path.Combine(set.ManifestsDir, n))).ToList();
+        int total = blobs.Count + manifests.Count, done = 0;
+        progress?.Report((0, total));
+        foreach (var hash in blobs)
+        {
+            ct.ThrowIfCancellationRequested();
+            Blobs.EncryptInPlace(hash);
+            progress?.Report((++done, total));
+        }
+        foreach (var path in manifests)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!Manifest.IsEncryptedFile(path)) Manifest.Write(path, Manifest.Read(path, key), key);
+            progress?.Report((++done, total));
+        }
+        var id = Identity;
+        id.Encrypting = false;
+        AtomicFile.WriteAllText(IdentityFile, JsonSerializer.Serialize(id));
+        _identity = id;
+    }
+
     /// <summary>Re-wraps the data key with a new password. Nothing else on the destination changes.</summary>
     public bool ChangePassword(string current, string next)
     {
@@ -141,4 +192,6 @@ public sealed class DriveIdentity
     [JsonPropertyName("created")] public DateTimeOffset Created { get; set; }
     /// <summary>Present when the destination is encrypted.</summary>
     [JsonPropertyName("password")] public PasswordKey? Password { get; set; }
+    /// <summary>True while backups written before the password was added are still being encrypted.</summary>
+    [JsonPropertyName("encrypting")] public bool Encrypting { get; set; }
 }
