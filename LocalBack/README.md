@@ -37,6 +37,8 @@ The real app, rendered on Windows by the UI test (`docs/screenshots/`, refreshed
 | ![Backup sets](docs/screenshots/Main.png) | ![Version history](docs/screenshots/History.png) |
 | ![Add backup set](docs/screenshots/AddSet.png) | ![Free up space](docs/screenshots/FreeSpace.png) |
 | ![Tray flyout](docs/screenshots/Tray.png) | ![Settings](docs/screenshots/Settings.png) |
+| ![Deleted files](docs/screenshots/History-deleted.png) | ![Unlock](docs/screenshots/Unlock.png) |
+| ![Main window in Polish](docs/screenshots/Main-pl.png) | ![Add backup set in Polish](docs/screenshots/AddSet-pl.png) |
 
 ## Stack
 
