@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Threading;
+using LocalBack.App.Localization;
 using LocalBack.App.Services;
 using LocalBack.App.Views;
 using LocalBack.Core.Drives;
@@ -55,8 +56,7 @@ public partial class App : Application
         _engineLock = EngineLock.Acquire(paths.DataDir, TimeSpan.FromSeconds(60));
         if (_engineLock == null)
         {
-            MessageBox.Show("A LocalBack command-line operation is still running. Start LocalBack again when it has finished.",
-                "LocalBack", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show(Loc.T("app.cliRunning"), "LocalBack", MessageBoxButton.OK, MessageBoxImage.Information);
             Shutdown();
             return;
         }
@@ -69,6 +69,7 @@ public partial class App : Application
         };
 
         _service = new BackupService(paths) { IsOnBattery = WindowsIntegration.IsOnBattery };
+        Loc.Instance.Apply(_service.Settings.Language);
         _statusTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, (_, _) => FlushStatus(), Dispatcher);
         Service.StatusChanged += () => Dispatcher.InvokeAsync(() => { if (!_statusTimer.IsEnabled) _statusTimer.Start(); });
         Service.LowSpace += info => Dispatcher.InvokeAsync(() => ShowFreeSpace(info.Drive, lowSpace: true));
@@ -114,6 +115,7 @@ public partial class App : Application
     internal void UseServiceForTests(BackupService service)
     {
         _service = service;
+        Loc.Instance.Apply(service.Settings.Language);
         service.StatusChanged += () => Dispatcher.InvokeAsync(FlushStatus);
     }
 
@@ -135,10 +137,10 @@ public partial class App : Application
         _statusTimer?.Stop();
         var statuses = Service.GetStatuses();
         var worst = Worst(statuses);
-        string tip = statuses.Count == 0 ? "LocalBack — no backup sets yet"
-            : Service.RunningSetName is { } running ? $"LocalBack — backing up {running}…"
-            : worst == SetHealth.UpToDate ? "LocalBack — everything is backed up"
-            : $"LocalBack — {statuses.First(s => s.Health == worst).StatusText.ToLowerInvariant()}";
+        string tip = statuses.Count == 0 ? Loc.T("tray.tip.none")
+            : Service.RunningSetName is { } running ? Loc.T("tray.tip.running", running)
+            : worst == SetHealth.UpToDate ? Loc.T("tray.tip.upToDate")
+            : Loc.T("tray.tip.other", Ui.StatusText(worst).ToLower(Loc.Instance.Culture));
         _tray?.Update(worst, tip, Service.IsPaused);
         StatusRefreshed?.Invoke();
     }
@@ -146,7 +148,7 @@ public partial class App : Application
     public static SetHealth Worst(IReadOnlyList<SetStatus> statuses)
     {
         if (statuses.Any(s => s.Health == SetHealth.Running)) return SetHealth.Running;
-        foreach (var h in new[] { SetHealth.Error, SetHealth.DriveMissing, SetHealth.Paused, SetHealth.Pending, SetHealth.NeverRun })
+        foreach (var h in new[] { SetHealth.Error, SetHealth.Locked, SetHealth.DriveMissing, SetHealth.Paused, SetHealth.Pending, SetHealth.NeverRun })
             if (statuses.Any(s => s.Health == h)) return h;
         // Browse-only sets do not count against "everything is backed up".
         if (statuses.All(s => s.Health == SetHealth.Disabled)) return SetHealth.Disabled;
@@ -184,6 +186,24 @@ public partial class App : Application
         var owner = OpenMain();
         var dlg = new AddSetWindow(editing) { Owner = owner };
         if (dlg.ShowDialog() == true) FlushStatus();
+    }
+
+    /// <summary>Asks for a destination's password. True when it was unlocked.</summary>
+    public bool ShowUnlock(DriveStore drive)
+    {
+        var dlg = new UnlockWindow(drive);
+        if (_main != null) dlg.Owner = _main;
+        var ok = dlg.ShowDialog() == true;
+        if (ok) FlushStatus();
+        return ok;
+    }
+
+    /// <summary>Re-reads the language setting and relabels what is not bound (tray menu, tooltip).</summary>
+    public void ApplyLanguage()
+    {
+        Loc.Instance.Apply(Service.Settings.Language);
+        _tray?.Relabel();
+        FlushStatus();
     }
 
     public void ShowFreeSpace(DriveStore drive, bool lowSpace)

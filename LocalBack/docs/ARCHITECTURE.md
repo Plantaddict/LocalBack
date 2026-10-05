@@ -20,10 +20,21 @@ A manifest lists every file in the set at that moment: relative path, hash, size
 
 Hashing: SHA-256 (or BLAKE3 if Rust). Hash only when size or mtime differs from the index.
 
+## Encryption (optional, per destination)
+
+- `drive.json` carries `password`: PBKDF2-SHA256 salt and rounds, and the 32-byte data key wrapped with AES-256-GCM under the password-derived key. Unwrapping with the wrong password fails authentication; nothing else on the destination is tried.
+- Blobs and manifests are containers of 1 MiB AES-256-GCM chunks: `"LBE1"`, an 8-byte random nonce prefix, then `[last:1][length:4][ciphertext][tag:16]` per chunk. The chunk index and the last-chunk flag are authenticated, so chunks cannot be reordered, dropped or truncated.
+- Blob names are still SHA-256 of the plaintext, so deduplication works unchanged. (Someone with the drive can tell that two encrypted blobs have the same content, not what it is.)
+- The data key of an unlocked destination is kept in memory and in `keys.json` in the data folder (DPAPI, current user). `set.json` and `snapshots.jsonl` are not encrypted.
+
+## Destinations
+
+A destination is any folder: a drive root (`E:\`), a folder on a drive (`E:\Backups`) or a UNC share. `DriveRef` stores the last known path, the drive identity id, the volume serial and, for drives, the sub-path under the volume root, so the same folder is found again on a drive that came back with another letter. Shares are retried on the schedule tick (every few minutes while away), with a short negative cache so an unreachable share does not stall the UI.
+
 ## Local index (SQLite, on the PC)
 
 - `files(set, root, path, size, mtime, attr, hash)` mirror of the newest manifest, for fast change detection.
-- `versions(set, root, path, hash, size, first_seen, superseded)` for per-file history queries.
+- `versions(set, root, path, hash, size, first_seen, superseded, mtime)` for per-file history queries, and for the "Deleted files" view (last version of every path that is no longer in `files`).
 - `pending(set, path)` paths queued while the drive is unplugged, the app is paused, or the set is not on a live schedule.
 - `sets_state(set, last_manifest, last_run, last_full, last_error)`.
 

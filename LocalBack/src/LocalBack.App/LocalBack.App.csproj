@@ -33,5 +33,6 @@
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Assets\LocalBack.ico" />
+    <EmbeddedResource Include="Localization\Strings.*.json" />
   </ItemGroup>
 </Project>

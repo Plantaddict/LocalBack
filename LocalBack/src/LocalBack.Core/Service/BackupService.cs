@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using LocalBack.Core.Crypto;
 using LocalBack.Core.Drives;
 using LocalBack.Core.Engine;
@@ -424,7 +423,8 @@ public sealed class BackupService : IDisposable
 
     private void WorkerLoop()
     {
-        if (OperatingSystem.IsWindows()) Native.EnterBackgroundMode();
+        // Below-normal CPU priority only. Windows "background mode" would also drop disk priority to the lowest
+        // level, which on a USB drive made a live backup crawl whenever anything else touched the disk.
         while (!_stopping)
         {
             (BackupSet Set, WorkItem Item)? next = null;
@@ -806,24 +806,5 @@ public sealed class BackupService : IDisposable
     {
         try { StatusChanged?.Invoke(); }
         catch (Exception ex) { Log.Error("Status handler failed", ex); }
-    }
-
-    private static class Native
-    {
-        private const int ThreadModeBackgroundBegin = 0x00010000;
-
-        [DllImport("kernel32.dll")]
-        private static extern IntPtr GetCurrentThread();
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool SetThreadPriority(IntPtr thread, int priority);
-
-        /// <summary>Low CPU and low I/O priority for the copying thread, so saving in other apps stays snappy.</summary>
-        public static void EnterBackgroundMode()
-        {
-            try { SetThreadPriority(GetCurrentThread(), ThreadModeBackgroundBegin); }
-            catch (EntryPointNotFoundException) { }
-        }
     }
 }

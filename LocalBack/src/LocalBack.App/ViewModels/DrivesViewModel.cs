@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using LocalBack.App.Localization;
 using LocalBack.Core.Drives;
 using LocalBack.Core.Model;
 using LocalBack.Core.Service;
@@ -33,13 +34,19 @@ public sealed class DrivesViewModel : ObservableObject
         var rows = await Task.Run(() =>
         {
             var list = new List<DriveRowViewModel>();
+            var seen = new HashSet<string>(PathUtil.Comparer);
             foreach (var d in DriveLocator.ListDrives().Where(d => !d.IsSystem || d.HasStore))
             {
-                var store = d.HasStore ? DriveStore.TryOpen(d.Root) : null;
-                var mine = store == null ? new List<BackupSet>()
-                    : service.Sets.Where(s => s.Drive.Id == store.Identity.Id).ToList();
-                var foreign = store == null ? new List<BackupSet>() : service.ForeignSets(store);
-                list.Add(new DriveRowViewModel(this, d, store, mine, foreign));
+                seen.Add(PathUtil.NormalizeFolder(d.Root));
+                list.Add(Row(service, d));
+            }
+            // Destinations that are folders or shares rather than drive roots.
+            foreach (var set in service.Sets)
+            {
+                var root = set.Drive.LastRoot;
+                if (string.IsNullOrEmpty(root) || !seen.Add(PathUtil.NormalizeFolder(root))) continue;
+                var d = DriveLocator.Describe(root);
+                if (d != null) list.Add(Row(service, d with { Label = "", IsRemovable = false }, isNetwork: set.Drive.IsNetwork));
             }
             return list;
         });
@@ -48,14 +55,25 @@ public sealed class DrivesViewModel : ObservableObject
         Raise(nameof(IsEmpty));
     }
 
+    private DriveRowViewModel Row(BackupService service, DriveCandidate d, bool isNetwork = false)
+    {
+        var store = d.HasStore ? DriveStore.TryOpen(d.Root) : null;
+        var mine = store == null ? new List<BackupSet>() : service.Sets.Where(s => s.Drive.Id == store.Identity.Id).ToList();
+        var foreign = store == null || store.IsLocked ? new List<BackupSet>() : service.ForeignSets(store);
+        return new DriveRowViewModel(this, d, store, mine, foreign, isNetwork);
+    }
+
     internal void FreeUp(DriveStore store) => _app.ShowFreeSpace(store, lowSpace: false);
+
+    internal void Unlock(DriveStore store)
+    {
+        if (_app.ShowUnlock(store)) Refresh();
+    }
 
     internal void Import(DriveStore store, BackupSet set)
     {
         bool watch = set.Folders.All(Directory.Exists) &&
-                     Ui.Confirm($"\"{set.Name}\" was backed up from {string.Join(", ", set.Folders)}.\n\n" +
-                                "Those folders exist on this PC. Keep backing them up from here?\n" +
-                                "Choose Cancel to only browse and restore its history.", "Add backup set");
+                     Ui.Confirm(Loc.T("drives.import.question", set.Name, string.Join(", ", set.Folders)), Loc.T("drives.import.title"));
         var added = _app.Service.ImportSet(store, set, watch);
         _main.ShowHistory(added, null);
     }
@@ -63,16 +81,21 @@ public sealed class DrivesViewModel : ObservableObject
 
 public sealed class DriveRowViewModel
 {
-    public DriveRowViewModel(DrivesViewModel owner, DriveCandidate d, DriveStore? store, List<BackupSet> mine, List<BackupSet> foreign)
+    public DriveRowViewModel(DrivesViewModel owner, DriveCandidate d, DriveStore? store, List<BackupSet> mine, List<BackupSet> foreign, bool isNetwork)
     {
-        Name = d.DisplayName;
-        Details = string.Join(" · ", new[] { d.IsRemovable ? "Removable" : "Fixed", d.Format }.Where(s => !string.IsNullOrEmpty(s)));
+        Name = string.IsNullOrEmpty(d.Label) && d.Letter.Length > 2 ? d.Root : d.DisplayName;
+        var kind = isNetwork ? Loc.T("drives.network") : d.IsRemovable ? Loc.T("drives.removable") : Loc.T("drives.fixed");
+        Details = string.Join(" · ", new[] { kind, d.Format, store is { IsEncrypted: true } ? Loc.T("drives.encrypted") : "" }.Where(s => !string.IsNullOrEmpty(s)));
         UsedPercent = d.Total > 0 ? 100.0 * (d.Total - d.Free) / d.Total : 0;
-        FreeText = d.Total > 0 ? $"{Format.Size(d.Free)} free of {Format.Size(d.Total)}" : "";
-        Sets = mine.Count > 0 ? "Backup drive for " + string.Join(", ", mine.Select(s => s.Name)) : store != null ? "Has LocalBack backups" : "Not used for backups";
+        FreeText = d.Total > 0 ? Loc.T("drive.freeOf", Format.Size(d.Free), Format.Size(d.Total)) : "";
+        Sets = store is { IsLocked: true } ? Loc.T("drives.locked")
+            : mine.Count > 0 ? Loc.T("drives.backupFor", string.Join(", ", mine.Select(s => s.Name)))
+            : store != null ? Loc.T("drives.hasBackups") : Loc.T("drives.notUsed");
         Foreign = foreign.Select(f => new ForeignSet(f, new RelayCommand(() => owner.Import(store!, f)))).ToList();
-        IsBackupDrive = store != null;
+        IsBackupDrive = store != null && !store.IsLocked;
+        IsLocked = store is { IsLocked: true };
         FreeUp = new RelayCommand(() => owner.FreeUp(store!), () => store != null);
+        Unlock = new RelayCommand(() => owner.Unlock(store!), () => store != null);
     }
 
     public string Name { get; }
@@ -81,12 +104,14 @@ public sealed class DriveRowViewModel
     public string FreeText { get; }
     public string Sets { get; }
     public bool IsBackupDrive { get; }
+    public bool IsLocked { get; }
     public List<ForeignSet> Foreign { get; }
     public bool HasForeign => Foreign.Count > 0;
     public ICommand FreeUp { get; }
+    public ICommand Unlock { get; }
 }
 
 public sealed record ForeignSet(BackupSet Set, ICommand Add)
 {
-    public string Text => $"{Set.Name} — from {string.Join(", ", Set.Folders)}";
+    public string Text => Loc.T("drives.from", Set.Name, string.Join(", ", Set.Folders));
 }

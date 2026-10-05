@@ -66,7 +66,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     /// <summary>The history screen has its own side panel, like in the design.</summary>
     public bool ShowNav => Page != Page.History;
 
-    public string Title => Page == Page.History ? "LocalBack — Version history" : "LocalBack";
+    public string Title => Page == Page.History ? Localization.Loc.T("title.history") : "LocalBack";
 
     public void Navigate(Page page)
     {
@@ -104,6 +104,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         Sets.Refresh();
         _history?.RefreshSets();
+        if (Page == Page.History) _history?.OnStatusChanged();
         var service = _app.Service;
         var set = service.Sets.FirstOrDefault(s => service.DriveFor(s) != null) ?? service.Sets.FirstOrDefault();
         if (set == null)
@@ -117,12 +118,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         if (drive == null)
         {
             DriveUsedPercent = 0;
-            DriveFreeText = "Not connected";
+            DriveFreeText = Localization.Loc.T("drive.notConnected");
             return;
         }
         var (free, total) = drive.Space();
         DriveUsedPercent = total > 0 ? 100.0 * (total - free) / total : 0;
-        DriveFreeText = total > 0 ? $"{Format.Size(free)} free of {Format.Size(total)}" : "";
+        DriveFreeText = total > 0 ? Localization.Loc.T("drive.freeOf", Format.Size(free), Format.Size(total)) : "";
     }
 
     public void Dispose()

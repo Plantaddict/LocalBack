@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using System.Windows.Media;
+using LocalBack.App.Localization;
 using LocalBack.Core.Model;
 using LocalBack.Core.Service;
 using LocalBack.Core.Util;
@@ -52,28 +53,30 @@ public sealed class SetsViewModel : ObservableObject
         Raise(nameof(IsEmpty));
 
         Subtitle = Describe(statuses, service);
-        var live = statuses.Where(s => s.Set.Schedule == RunSchedule.Live).ToList();
+        var live = statuses.Where(s => s.Set.Schedule == RunSchedule.Live && s.Set.Enabled).ToList();
         var drives = statuses.Select(s => _app.DriveDisplayName(s.Set).Split(' ')[0]).Distinct().ToList();
         var check = DateTime.Today.Add(service.Settings.DailyCheckAt).ToString("HH:mm");
         Footer = statuses.Count == 0
-            ? "LocalBack keeps a copy of chosen folders on an external drive, with every saved version, and brings files back with one click."
-            : (live.Count > 0 ? "Watching folders live: changed files are backed up within seconds of saving. " : "")
-              + $"Full check daily at {check} and whenever {(drives.Count == 1 ? "drive " + drives[0] + " is" : "a backup drive is")} plugged in.";
+            ? Loc.T("sets.footer.none")
+            : (live.Count > 0 ? Loc.T("sets.footer.live") : "")
+              + (drives.Count == 1 ? Loc.T("sets.footer.checkDrive", check, drives[0]) : Loc.T("sets.footer.checkAny", check));
     }
 
     private static string Describe(List<SetStatus> statuses, BackupService service)
     {
-        if (statuses.Count == 0) return "Add a backup set to start protecting your files.";
-        if (service.RunningSetName is { } running) return $"Backing up {running}…";
-        if (service.IsPaused) return $"Backups are paused until {service.Settings.PausedUntil!.Value.ToLocalTime():HH:mm}. Changes are being noted.";
-        var missing = statuses.Where(s => s.Health == SetHealth.DriveMissing).ToList();
-        if (missing.Count > 0) return $"{missing[0].DriveName} is not connected. Changes are queued until it is plugged in.";
+        if (statuses.Count == 0) return Loc.T("sets.subtitle.none");
+        if (service.RunningSetName is { } running) return Loc.T("sets.subtitle.running", running);
+        if (service.IsPaused) return Loc.T("sets.subtitle.paused", service.Settings.PausedUntil!.Value.ToLocalTime().ToString("HH:mm"));
+        var locked = statuses.FirstOrDefault(s => s.Health == SetHealth.Locked);
+        if (locked != null) return Loc.T("sets.subtitle.locked", locked.DriveName);
+        var missing = statuses.FirstOrDefault(s => s.Health == SetHealth.DriveMissing);
+        if (missing != null) return Loc.T("sets.subtitle.driveMissing", missing.DriveName);
         var failed = statuses.FirstOrDefault(s => s.Health == SetHealth.Error);
-        if (failed != null) return $"The last backup of {failed.Set.Name} failed: {failed.Error}";
+        if (failed != null) return Loc.T("sets.subtitle.failed", failed.Set.Name, failed.Error ?? "");
         int pending = statuses.Count(s => s.Health == SetHealth.Pending);
-        if (pending > 0) return pending == 1 ? "1 set has changes waiting to be backed up." : $"{pending} sets have changes waiting to be backed up.";
+        if (pending > 0) return Loc.Instance.Plural(pending, "set has changes waiting", "setsPending");
         var last = statuses.Where(s => s.Latest != null).Select(s => s.Latest!.CreatedUtc).DefaultIfEmpty().Max();
-        return last == default ? "Waiting for the first backup." : $"All sets are up to date. Last change saved {Format.When(last)}.";
+        return last == default ? Loc.T("sets.subtitle.first") : Loc.T("sets.subtitle.upToDate", Format.When(last));
     }
 }
 
@@ -92,6 +95,9 @@ public sealed class SetRowViewModel : ObservableObject
         Edit = new RelayCommand(() => _app.ShowAddSet(Set));
         Remove = new AsyncCommand(RemoveAsync);
         ToggleEnabled = new RelayCommand(() => _app.Service.SetEnabled(Set, !Set.Enabled));
+        Unlock = new RelayCommand(() => { if (_app.Service.DriveFor(Set) is { } d) _app.ShowUnlock(d); });
+        ForgetPassword = new RelayCommand(() => { if (_app.Service.DriveFor(Set) is { } d) _app.Service.LockDrive(d); },
+            () => _app.Service.DriveFor(Set) is { IsEncrypted: true, IsLocked: false });
         ShowFolder = new RelayCommand(() =>
         {
             var f = Set.Folders.FirstOrDefault();
@@ -106,17 +112,21 @@ public sealed class SetRowViewModel : ObservableObject
     public ICommand Edit { get; }
     public ICommand Remove { get; }
     public ICommand ToggleEnabled { get; }
+    public ICommand Unlock { get; }
+    public ICommand ForgetPassword { get; }
     public ICommand ShowFolder { get; }
-    public string ToggleEnabledText => _status?.Set.Enabled == false ? "Start backing up" : "Stop backing up (keep history)";
+    public string ToggleEnabledText => Loc.T(_status?.Set.Enabled == false ? "menu.startBackingUp" : "menu.stopBackingUp");
 
     public string Name => _status?.Set.Name ?? "";
     public string Path => _status?.FoldersText ?? "";
-    public string Status => _status?.StatusText ?? "";
-    public string When => _status?.WhenText ?? "";
-    public string Size => _status?.SizeText ?? "";
-    public string Versions => _status?.VersionsText ?? "";
+    public string Status => _status == null ? "" : Ui.StatusText(_status.Health);
+    public string When => _status == null ? "" : Ui.WhenText(_status);
+    public string Size => _status == null ? "" : Ui.SizeText(_status);
+    public string Versions => _status == null ? "" : Ui.VersionsText(_status);
     public Brush Dot => Ui.Dot(_status?.Health ?? SetHealth.NeverRun);
-    public string Tooltip => _status == null ? "" : $"{_status.Set.ScheduleText} · on {_status.DriveName}";
+    public bool IsLocked => _status?.Health == SetHealth.Locked;
+    public bool CanBackUp => !IsLocked;
+    public string Tooltip => _status == null ? "" : Loc.T("row.tooltip", Ui.ScheduleText(_status.Set.Schedule), _status.DriveName);
 
     public void Update(SetStatus status)
     {
@@ -127,9 +137,8 @@ public sealed class SetRowViewModel : ObservableObject
     private async Task RemoveAsync()
     {
         var set = Set;
-        var answer = System.Windows.MessageBox.Show(
-            $"Stop backing up \"{set.Name}\"?\n\nYes: also delete its backups from the drive.\nNo: keep the backups on the drive (you can add them back from Drives).",
-            "Remove backup set", System.Windows.MessageBoxButton.YesNoCancel, System.Windows.MessageBoxImage.Question, System.Windows.MessageBoxResult.Cancel);
+        var answer = System.Windows.MessageBox.Show(Loc.T("remove.question", set.Name), Loc.T("remove.title"),
+            System.Windows.MessageBoxButton.YesNoCancel, System.Windows.MessageBoxImage.Question, System.Windows.MessageBoxResult.Cancel);
         if (answer == System.Windows.MessageBoxResult.Cancel) return;
         await _app.Service.RemoveSetAsync(set, deleteBackups: answer == System.Windows.MessageBoxResult.Yes);
     }

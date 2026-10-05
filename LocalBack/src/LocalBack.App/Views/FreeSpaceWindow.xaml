@@ -2,8 +2,9 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:c="clr-namespace:LocalBack.App.Controls"
+        xmlns:l="clr-namespace:LocalBack.App.Localization"
         xmlns:v="clr-namespace:LocalBack.App.Views"
-        Title="Free up space" Width="536" Height="616" Icon="pack://application:,,,/LocalBack;component/Assets/LocalBack.ico" WindowStartupLocation="CenterScreen">
+        Title="{l:T free.doneTitle}" Width="536" Height="616" Icon="pack://application:,,,/LocalBack;component/Assets/LocalBack.ico" WindowStartupLocation="CenterScreen">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="Vis"/>
     </Window.Resources>
@@ -44,22 +45,22 @@
             <!-- Footer -->
             <DockPanel DockPanel.Dock="Bottom" Margin="0,14,0,0">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <Button Style="{StaticResource BtnSecondary}" Content="Not now" Command="{Binding NotNow}"/>
+                    <Button Style="{StaticResource BtnSecondary}" Content="{l:T free.notNow}" Command="{Binding NotNow}"/>
                     <Button Style="{StaticResource BtnPrimary}" Content="{Binding ApplyText}" Command="{Binding Apply}" Margin="8,0,0,0"/>
                 </StackPanel>
                 <CheckBox IsChecked="{Binding AutoFree}" VerticalAlignment="Center" Margin="0,0,8,0">
-                    <TextBlock Text="Do this automatically when space is low" TextWrapping="Wrap"/>
+                    <TextBlock Text="{l:T free.auto}" TextWrapping="Wrap"/>
                 </CheckBox>
             </DockPanel>
 
             <StackPanel DockPanel.Dock="Bottom" Margin="0,12,0,0">
-                <TextBlock Text="The newest version of every file is always kept. Nothing on your PC is touched." Style="{StaticResource Secondary}" TextWrapping="Wrap"/>
+                <TextBlock Text="{l:T free.keptNote}" Style="{StaticResource Secondary}" TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding Offenders}" Style="{StaticResource Secondary}" TextWrapping="Wrap" Margin="0,4,0,0"
                            Visibility="{Binding HasOffenders, Converter={StaticResource Vis}}"/>
             </StackPanel>
 
             <StackPanel Margin="0,16,0,0">
-                <TextBlock Text="Choose what to remove" Style="{StaticResource Label}" Margin="0,0,0,4"/>
+                <TextBlock Text="{l:T free.choose}" Style="{StaticResource Label}" Margin="0,0,0,4"/>
                 <ItemsControl ItemsSource="{Binding Options}" Focusable="False">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>

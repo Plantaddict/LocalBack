@@ -219,3 +219,53 @@ public class DestinationTests
         Assert.True(free >= 0 && free <= total);
     }
 }
+
+public class DeletedFilesAndCopyTests
+{
+    [Fact]
+    public async Task Deleted_files_keep_their_last_copy_and_are_listed()
+    {
+        using var env = new TestEnv();
+        var gone = env.Write("gone.txt", "keep me", secondsAgo: 300);
+        env.Write("stay.txt", "still here", secondsAgo: 300);
+        await env.Backup();
+        env.Write("gone.txt", "keep me v2", secondsAgo: 200);
+        await env.Backup();
+        File.Delete(gone);
+        await env.Backup();
+        env.Write("stay.txt", "changed", secondsAgo: 50);
+        await env.Backup();
+
+        var deleted = env.Engine.DeletedFiles(env.Set);
+        var d = Assert.Single(deleted);
+        Assert.Equal("gone.txt", d.Name);
+        Assert.NotNull(d.DeletedAt);
+        Assert.Equal("keep me v2", new StreamReader(env.Drive.Blobs.OpenRead(d.Entry.Hash)).ReadToEnd());
+
+        // Retention never removes the last copy of a deleted file.
+        var preview = LocalBack.Core.Retention.RetentionPlanner.Preview(env.Drive, new LocalBack.Core.Model.RetentionPlan(LocalBack.Core.Model.RetentionKind.KeepLast, Count: 1), DateTimeOffset.Now);
+        await LocalBack.Core.Retention.RetentionPlanner.ApplyAsync(env.Engine, env.Drive, preview);
+        Assert.True(env.Drive.Blobs.Exists(d.Entry.Hash));
+        Assert.Single(env.Engine.DeletedFiles(env.Set));
+
+        // Bring it back.
+        var r = await env.Engine.RestoreAsync(env.Set, new[] { (d.Key, d.Entry) }, null);
+        Assert.Equal(1, r.Restored);
+        Assert.Equal("keep me v2", File.ReadAllText(gone));
+        await env.Backup();
+        Assert.Empty(env.Engine.DeletedFiles(env.Set));
+    }
+
+    [Fact]
+    public async Task Large_files_are_copied_in_one_pass_and_still_deduplicated()
+    {
+        using var env = new TestEnv();
+        env.Engine.PreHashLimit = 100; // everything counts as large
+        env.Write("a.bin", new string('x', 5000));
+        env.Write("b.bin", new string('x', 5000)); // same content
+        var r = await env.Backup();
+        Assert.Equal(2, r.Added);
+        Assert.Single(env.Drive.Blobs.EnumerateAll());
+        Assert.Empty(Directory.Exists(Path.Combine(env.Drive.Blobs.Root, "tmp")) ? Directory.GetFiles(Path.Combine(env.Drive.Blobs.Root, "tmp")) : Array.Empty<string>());
+    }
+}

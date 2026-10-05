@@ -23,6 +23,9 @@ public sealed class AppSettings
     /// <summary>Seconds of quiet before a changed file is backed up.</summary>
     public int DebounceSeconds { get; set; } = 3;
 
+    /// <summary>UI language code ("en", "pl"); null follows the Windows display language.</summary>
+    public string? Language { get; set; }
+
     public bool StartWithWindows { get; set; } = true;
     public bool ExplorerMenu { get; set; } = true;
     public bool ThrottleOnBattery { get; set; } = true;

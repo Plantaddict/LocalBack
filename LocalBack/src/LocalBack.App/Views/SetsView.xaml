@@ -1,7 +1,8 @@
 <UserControl x:Class="LocalBack.App.Views.SetsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:c="clr-namespace:LocalBack.App.Controls">
+             xmlns:c="clr-namespace:LocalBack.App.Controls"
+             xmlns:l="clr-namespace:LocalBack.App.Localization">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="Vis"/>
     </UserControl.Resources>
@@ -12,18 +13,18 @@
                 <Button Style="{StaticResource BtnSecondary}" Command="{Binding AddSet}">
                     <StackPanel Orientation="Horizontal">
                         <c:Icon Data="{StaticResource IconPlus}"/>
-                        <TextBlock Text="Add set" Margin="8,0,0,0"/>
+                        <TextBlock Text="{l:T btn.addSet}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
                 <Button Style="{StaticResource BtnPrimary}" Command="{Binding BackUpAll}" Margin="8,0,0,0">
                     <StackPanel Orientation="Horizontal">
                         <c:Icon Data="{StaticResource IconBackUp}"/>
-                        <TextBlock Text="Back up all now" Margin="8,0,0,0"/>
+                        <TextBlock Text="{l:T btn.backUpAllNow}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
             </StackPanel>
             <StackPanel Margin="0,0,16,0">
-                <TextBlock Text="Backup sets" Style="{StaticResource H1}"/>
+                <TextBlock Text="{l:T sets.title}" Style="{StaticResource H1}"/>
                 <TextBlock Text="{Binding Subtitle}" Foreground="{StaticResource TextSecondary}" Margin="0,4,0,0" TextWrapping="Wrap"/>
             </StackPanel>
         </DockPanel>
@@ -42,9 +43,9 @@
                 <Border Width="56" Height="56" CornerRadius="10" Background="{StaticResource AccentTint}" HorizontalAlignment="Center">
                     <c:Icon Data="{StaticResource IconFolder}" Width="28" Height="28" Foreground="{StaticResource Accent}" HorizontalAlignment="Center"/>
                 </Border>
-                <TextBlock Text="Nothing is being backed up yet" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,14,0,4"/>
-                <TextBlock Text="Pick a folder like your Desktop and a USB drive to keep it on." Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center"/>
-                <Button Style="{StaticResource BtnPrimary}" Command="{Binding AddSet}" Margin="0,16,0,0" HorizontalAlignment="Center" Content="Add backup set"/>
+                <TextBlock Text="{l:T sets.empty.title}" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,14,0,4"/>
+                <TextBlock Text="{l:T sets.empty.text}" Foreground="{StaticResource TextSecondary}" HorizontalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="420"/>
+                <Button Style="{StaticResource BtnPrimary}" Command="{Binding AddSet}" Margin="0,16,0,0" HorizontalAlignment="Center" Content="{l:T sets.empty.button}"/>
             </StackPanel>
 
             <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -54,13 +55,15 @@
                             <Border Style="{StaticResource Card}" Margin="0,0,0,10" ToolTip="{Binding Tooltip}">
                                 <Border.ContextMenu>
                                     <ContextMenu>
-                                        <MenuItem Header="Back up now" Command="{Binding BackUp}"/>
-                                        <MenuItem Header="Version history" Command="{Binding Restore}"/>
-                                        <MenuItem Header="Open folder" Command="{Binding ShowFolder}"/>
+                                        <MenuItem Header="{l:T menu.backUpNow}" Command="{Binding BackUp}"/>
+                                        <MenuItem Header="{l:T menu.history}" Command="{Binding Restore}"/>
+                                        <MenuItem Header="{l:T menu.openFolder}" Command="{Binding ShowFolder}"/>
                                         <Separator/>
+                                        <MenuItem Header="{l:T menu.unlock}" Command="{Binding Unlock}" Visibility="{Binding IsLocked, Converter={StaticResource Vis}}"/>
+                                        <MenuItem Header="{l:T menu.forgetPassword}" Command="{Binding ForgetPassword}"/>
                                         <MenuItem Header="{Binding ToggleEnabledText}" Command="{Binding ToggleEnabled}"/>
-                                        <MenuItem Header="Edit…" Command="{Binding Edit}"/>
-                                        <MenuItem Header="Remove…" Command="{Binding Remove}"/>
+                                        <MenuItem Header="{l:T menu.edit}" Command="{Binding Edit}"/>
+                                        <MenuItem Header="{l:T menu.remove}" Command="{Binding Remove}"/>
                                     </ContextMenu>
                                 </Border.ContextMenu>
                                 <Grid>
@@ -90,9 +93,12 @@
                                         <TextBlock Text="{Binding Versions}" Style="{StaticResource Secondary}"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Button Style="{StaticResource BtnSecondarySm}" Content="Back up" Command="{Binding BackUp}"/>
-                                        <Button Style="{StaticResource BtnOutlineSm}" Content="Restore" Command="{Binding Restore}" Margin="6,0,0,0"/>
-                                        <Button Style="{StaticResource BtnIcon}" Margin="2,0,-8,0" ToolTip="More" AutomationProperties.Name="More actions"
+                                        <Button Style="{StaticResource BtnSecondarySm}" Content="{l:T btn.backUp}" Command="{Binding BackUp}"
+                                                Visibility="{Binding CanBackUp, Converter={StaticResource Vis}}"/>
+                                        <Button Style="{StaticResource BtnSecondarySm}" Content="{l:T btn.unlock}" Command="{Binding Unlock}"
+                                                Visibility="{Binding IsLocked, Converter={StaticResource Vis}}"/>
+                                        <Button Style="{StaticResource BtnOutlineSm}" Content="{l:T btn.restore}" Command="{Binding Restore}" Margin="6,0,0,0"/>
+                                        <Button Style="{StaticResource BtnIcon}" Margin="2,0,-8,0" ToolTip="{l:T btn.more}" AutomationProperties.Name="{l:T btn.more}"
                                                 Click="More_Click">
                                             <TextBlock Text="⋯" FontSize="16" Margin="0,-4,0,0"/>
                                         </Button>

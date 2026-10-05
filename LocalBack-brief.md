@@ -23,9 +23,9 @@ People keep important work on the Desktop and in Documents, own a USB drive, and
 
 ## Non-goals (v1)
 
-- Cloud or network destinations
+- Cloud destinations (network shares are supported)
 - Whole-disk or system-image backup
-- Encryption at rest (consider for v2)
+- ~~Encryption at rest (consider for v2)~~ done
 - Backing up open/locked files via Volume Shadow Copy (v2, AlphaVSS)
 - macOS or Linux
 
@@ -75,4 +75,4 @@ Look: Windows-native. Segoe UI, flat panels, one blue accent (#0F5FBF), green/am
 - ~~Should the auto-prune checkbox apply the chosen plan once, or become the standing retention policy in Settings?~~ Decided: standing policy, Settings → Version retention.
 - ~~Default schedule on laptops: live, or hourly while on battery?~~ Decided: live, batched to at most every 15 minutes on battery (Settings toggle, on by default).
 - Should a backup set be allowed to span two drives (e.g. mirror to both when present)?
-- Encryption of the blob store for drives that leave the house.
+- ~~Encryption of the blob store for drives that leave the house.~~ Done: optional password per destination (AES-256-GCM), chosen when the destination is first used.

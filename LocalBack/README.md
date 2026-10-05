@@ -9,6 +9,10 @@ A small Windows tray app that keeps a versioned backup of chosen folders on an e
 - Backs up to any external drive, including FAT32/exFAT pendrives. Runs automatically when the drive is plugged in.
 - Stays out of the way: debounced change detection, temp-file exclusions, metadata-only rescans, low-priority I/O.
 - Warns when the drive is almost full and offers to thin out old copies of the same file.
+- Destination can be a drive, a folder on a drive, or a network share (`\\nas\backups`).
+- Optional password protection: everything on the destination is encrypted (AES-256-GCM); the key is unlocked by the password and kept on the PC so backups keep running.
+- Deleted files keep their last copy; History → "Deleted files" lists them with "Bring back".
+- English and Polish; follows the Windows display language, switchable in Settings.
 
 ## Design
 
@@ -132,3 +136,7 @@ Commands that write (`add`, `backup`, `restore`, `prune`, `remove`, `watch`) nee
 - **Auto-prune is a standing policy** (Settings → Version retention), answering the first open question in the brief.
 - **On battery**, live changes are batched to at most one run every 15 minutes (Settings, on by default).
 - **Trimming is off**: WPF does not support it. The build is self-contained, single-file, ReadyToRun and compressed instead.
+- **Encryption is chosen when a destination is first used.** A random data key encrypts files and snapshot lists; the password only wraps that key (PBKDF2-SHA256, 600 000 rounds), so changing the password is instant and there is no way to recover a lost one. `set.json` and the snapshot summary list (`snapshots.jsonl`: dates and counts) stay in clear so a destination can be recognised and listed without the password; file names and contents do not.
+- **The key stays on the PC** (`keys.json`, protected with DPAPI for the signed-in user) so live backups run unattended. Another PC asks for the password; "Forget password on this PC" in a set's menu removes the saved key.
+- **Network shares** get no plug-in event, so a share that is away is tried again every few minutes.
+- **UI text lives in `src/LocalBack.App/Localization/Strings.<lang>.json`.** Adding a language is one file plus a line in `Loc.Available`.

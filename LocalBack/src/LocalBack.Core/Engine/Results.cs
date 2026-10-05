@@ -43,7 +43,7 @@ public sealed class RestoreResult
 }
 
 /// <summary>A file as shown in the History view for one snapshot.</summary>
-public sealed record SnapshotFile(FileKey Key, ManifestEntry Entry, ChangeKind Change)
+public sealed record SnapshotFile(FileKey Key, ManifestEntry Entry, ChangeKind Change, DateTimeOffset? DeletedAt = null)
 {
     public string Name => Util.PathUtil.FileName(Key.Path);
     public string DisplayPath => Key.Path.Replace('/', Path.DirectorySeparatorChar);

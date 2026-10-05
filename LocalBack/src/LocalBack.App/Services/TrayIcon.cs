@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using LocalBack.App.Localization;
 using LocalBack.Core.Service;
 
 namespace LocalBack.App.Services;
@@ -11,6 +12,8 @@ public sealed class TrayIcon : IDisposable
 {
     private readonly NotifyIcon _icon;
     private readonly ToolStripMenuItem _pauseItem;
+    private readonly ToolStripMenuItem _openItem, _backUpItem, _restoreItem, _exitItem;
+    private bool _paused;
     private Icon? _current;
     private string _currentKey = "";
 
@@ -24,13 +27,13 @@ public sealed class TrayIcon : IDisposable
     public TrayIcon()
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Open LocalBack", null, (_, _) => OpenRequested?.Invoke()).Font = new Font(menu.Font, System.Drawing.FontStyle.Bold);
-        menu.Items.Add("Back up now", null, (_, _) => BackUpNowRequested?.Invoke());
-        menu.Items.Add("Restore…", null, (_, _) => RestoreRequested?.Invoke());
-        _pauseItem = new ToolStripMenuItem("Pause for 1 hour", null, (_, _) => PauseToggleRequested?.Invoke());
-        menu.Items.Add(_pauseItem);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) => ExitRequested?.Invoke());
+        _openItem = new ToolStripMenuItem("", null, (_, _) => OpenRequested?.Invoke()) { Font = new Font(menu.Font, System.Drawing.FontStyle.Bold) };
+        _backUpItem = new ToolStripMenuItem("", null, (_, _) => BackUpNowRequested?.Invoke());
+        _restoreItem = new ToolStripMenuItem("", null, (_, _) => RestoreRequested?.Invoke());
+        _pauseItem = new ToolStripMenuItem("", null, (_, _) => PauseToggleRequested?.Invoke());
+        _exitItem = new ToolStripMenuItem("", null, (_, _) => ExitRequested?.Invoke());
+        menu.Items.AddRange(new ToolStripItem[] { _openItem, _backUpItem, _restoreItem, _pauseItem, new ToolStripSeparator(), _exitItem });
+        Relabel();
 
         _icon = new NotifyIcon { Text = "LocalBack", ContextMenuStrip = menu, Visible = true };
         _icon.MouseClick += (_, e) =>
@@ -41,15 +44,26 @@ public sealed class TrayIcon : IDisposable
         Update(SetHealth.UpToDate, "LocalBack", false);
     }
 
+    /// <summary>Menu texts in the current language.</summary>
+    public void Relabel()
+    {
+        _openItem.Text = Loc.T("tray.menu.open");
+        _backUpItem.Text = Loc.T("tray.menu.backUp");
+        _restoreItem.Text = Loc.T("tray.menu.restore");
+        _pauseItem.Text = Loc.T(_paused ? "tray.menu.resume" : "tray.menu.pause");
+        _exitItem.Text = Loc.T("tray.menu.exit");
+    }
+
     /// <summary>Updates the badge colour and tooltip.</summary>
     public void Update(SetHealth worst, string tooltip, bool paused)
     {
         _icon.Text = tooltip.Length > 63 ? tooltip[..63] : tooltip;
-        _pauseItem.Text = paused ? "Resume backups" : "Pause for 1 hour";
+        _paused = paused;
+        _pauseItem.Text = Loc.T(paused ? "tray.menu.resume" : "tray.menu.pause");
         Color? badge = worst switch
         {
             SetHealth.Error => Color.FromArgb(0xA1, 0x2A, 0x2A),
-            SetHealth.Pending or SetHealth.DriveMissing or SetHealth.Paused => Color.FromArgb(0xB8, 0x5C, 0x00),
+            SetHealth.Pending or SetHealth.DriveMissing or SetHealth.Paused or SetHealth.Locked => Color.FromArgb(0xB8, 0x5C, 0x00),
             SetHealth.Running => Color.FromArgb(0x0F, 0x5F, 0xBF),
             _ => null,
         };

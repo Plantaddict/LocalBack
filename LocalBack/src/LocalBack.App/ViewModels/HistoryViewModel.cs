@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using System.Windows.Media;
+using LocalBack.App.Localization;
 using LocalBack.App.Services;
 using LocalBack.Core.Engine;
 using LocalBack.Core.Model;
+using LocalBack.Core.Service;
 using LocalBack.Core.Storage;
 using LocalBack.Core.Util;
 
@@ -25,6 +27,8 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _loadCts;
     private string? _pendingFocusPath;
     private int _snapshotsLoad;
+    private bool _showDeleted;
+    private List<SnapshotFile>? _deleted;
 
     public ObservableCollection<BackupSet> Sets { get; } = new();
     public ObservableCollection<SnapshotItem> Snapshots { get; } = new();
@@ -37,12 +41,19 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         Back = new RelayCommand(() => _main.Navigate(Page.Sets));
         RestoreEverything = new AsyncCommand(RestoreEverythingAsync, () => _details != null && !_loading);
         RestoreToFolder = new AsyncCommand(RestoreToFolderAsync, () => _details != null && !_loading);
+        UnlockCommand = new RelayCommand(() =>
+        {
+            if (_set != null && _app.Service.DriveFor(_set) is { } d && _app.ShowUnlock(d)) _ = LoadSnapshotsAsync();
+        });
         RefreshSets();
     }
 
     public ICommand Back { get; }
     public ICommand RestoreEverything { get; }
     public ICommand RestoreToFolder { get; }
+    public ICommand UnlockCommand { get; }
+    private bool _showUnlock;
+    public bool ShowUnlock { get => _showUnlock; private set => Set(ref _showUnlock, value); }
 
     public BackupSet? SelectedSet
     {
@@ -83,6 +94,19 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         set { if (Set(ref _onlyChanged, value)) ApplyFilter(); }
     }
 
+    /// <summary>Lists every file that is gone from the folder with its last copy, instead of one snapshot's files.</summary>
+    public bool ShowDeleted
+    {
+        get => _showDeleted;
+        set
+        {
+            if (!Set(ref _showDeleted, value)) return;
+            RaiseHeader();
+            if (value) _ = LoadDeletedAsync();
+            else { _deleted = null; ApplyFilter(); }
+        }
+    }
+
     /// <summary>Shown instead of the lists when there is nothing to show (no drive, no snapshots).</summary>
     public string Message { get => _message; private set { if (Set(ref _message, value)) Raise(nameof(HasMessage)); } }
     public bool HasMessage => Message.Length > 0;
@@ -92,21 +116,24 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
 
     public bool Loading { get => _loading; private set => Set(ref _loading, value); }
 
-    public string Header => _set == null ? "Version history" : _snapshot == null ? _set.Name : $"{_set.Name} — {_snapshot.Label}";
-    public string SubHeader => _snapshot == null || _details == null ? (_snapshot?.Meta ?? "")
+    public string Header => _set == null ? Loc.T("history.title")
+        : ShowDeleted ? Loc.T("history.deletedHeader", _set.Name)
+        : _snapshot == null ? _set.Name : $"{_set.Name} — {_snapshot.Label}";
+    public string SubHeader => ShowDeleted ? Loc.T("history.deletedSub")
+        : _snapshot == null || _details == null ? (_snapshot?.Meta ?? "")
         : $"{_snapshot.Meta} · {Format.Plural(_details.Info.Files, "file", "files")} · {Format.Size(_details.Info.Bytes)}";
 
-    public string FooterText => Status.Length > 0 ? Status
-        : "Open shows a read-only copy of that version. Restore replaces the current file; the replaced copy is kept as a new version.";
+    public string FooterText => Status.Length > 0 ? Status : Loc.T("history.footer");
 
     public string SourceText => _set != null && _app.Service.DriveFor(_set) is { } d
-        ? $"Source: {System.IO.Path.Combine(d.Root, "sets", _set.Id)}" : "";
+        ? Loc.T("history.source", System.IO.Path.Combine(d.Root, "sets", _set.Id)) : "";
 
-    public string EmptyFilesText => _details == null ? ""
-        : Search.Length > 0 ? "No files match your search."
-        : OnlyChanged ? "Nothing changed in this snapshot. Untick \"Only changed\" to see every file."
-        : "This snapshot has no files.";
-    public bool FilesEmpty => _details != null && Files.Count == 0;
+    public string EmptyFilesText => ShowDeleted ? (_deleted == null ? "" : Search.Length > 0 ? Loc.T("history.emptySearch") : Loc.T("history.emptyDeleted"))
+        : _details == null ? ""
+        : Search.Length > 0 ? Loc.T("history.emptySearch")
+        : OnlyChanged ? Loc.T("history.emptyChanged")
+        : Loc.T("history.emptyNone");
+    public bool FilesEmpty => (ShowDeleted ? _deleted != null : _details != null) && Files.Count == 0;
 
     private void RaiseHeader()
     {
@@ -119,6 +146,18 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
     {
         RefreshSets();
         if (_set == null && Sets.Count > 0) SelectedSet = Sets[0];
+        else OnStatusChanged();
+    }
+
+    /// <summary>Called when a backup finished: picks up a new snapshot without losing the user's place.</summary>
+    public void OnStatusChanged()
+    {
+        if (_set == null || _loading) return;
+        var status = _app.Service.GetStatus(_set);
+        var newest = status.Latest?.Name;
+        var shown = Snapshots.FirstOrDefault()?.Info.Name;
+        bool driveCameBack = HasMessage && status.Health is not (SetHealth.DriveMissing or SetHealth.Locked) && Snapshots.Count == 0 && newest != null;
+        if (newest != shown || driveCameBack) _ = LoadSnapshotsAsync(keepSelection: true);
     }
 
     public void RefreshSets()
@@ -140,7 +179,7 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
             var found = BackupEngine.Locate(_app.Service.Sets, path);
             if (found == null)
             {
-                Message = $"{path}\nis not in any backup set. Add its folder to a set to keep versions of it.";
+                Message = Loc.T("history.notInSet", path);
                 return;
             }
             set = found.Value.Set;
@@ -149,26 +188,31 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         set = set == null ? Sets.FirstOrDefault() : Sets.FirstOrDefault(s => s.Id == set.Id);
         if (set == null)
         {
-            Message = "There are no backup sets yet.";
+            Message = Loc.T("history.noSets");
             return;
         }
         if (ReferenceEquals(set, _set)) _ = LoadSnapshotsAsync();
         else SelectedSet = set;
     }
 
-    private async Task LoadSnapshotsAsync()
+    private async Task LoadSnapshotsAsync(bool keepSelection = false)
     {
         var set = _set;
         if (set == null) return;
         // Only the newest request may fill the list; an older one finishing late would add duplicates.
         int load = ++_snapshotsLoad;
+        var previous = keepSelection ? _snapshot?.Info.Name : null;
         Message = "";
         Status = "";
+        ShowUnlock = false;
         Snapshots.Clear();
-        Files = new ObservableCollection<FileRowViewModel>();
-        _details = null;
-        _snapshot = null;
-        RaiseHeader();
+        if (!keepSelection)
+        {
+            Files = new ObservableCollection<FileRowViewModel>();
+            _details = null;
+            _snapshot = null;
+            RaiseHeader();
+        }
         Loading = true;
         try
         {
@@ -177,18 +221,36 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
             foreach (var s in Enumerable.Reverse(list)) Snapshots.Add(new SnapshotItem(s, this));
             if (Snapshots.Count == 0)
             {
-                Message = "No snapshots yet. The first backup of this set has not finished.";
+                Message = Loc.T("history.noSnapshots");
                 return;
             }
-            SelectedSnapshot = Snapshots[0];
+            if (ShowDeleted)
+            {
+                _snapshot = Snapshots.FirstOrDefault(s => s.Info.Name == previous) ?? Snapshots[0];
+                _snapshot.IsSelected = true;
+                await LoadDeletedAsync();
+                return;
+            }
+            var keep = previous == null ? null : Snapshots.FirstOrDefault(s => s.Info.Name == previous);
+            if (keep != null)
+            {
+                _snapshot = null; // force the setter to reload the (possibly changed) details
+                SelectedSnapshot = keep;
+            }
+            else SelectedSnapshot = Snapshots[0];
         }
         catch (DriveNotAvailableException)
         {
-            Message = $"Plug in {_app.DriveDisplayName(set)} to see and restore older versions of {set.Name}.";
+            Message = Loc.T("history.plugIn", _app.DriveDisplayName(set), set.Name);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (DriveLockedException)
         {
-            Message = $"Could not read the backup drive: {ex.Message}";
+            Message = Loc.T("history.locked", _app.DriveDisplayName(set), set.Name);
+            ShowUnlock = true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException)
+        {
+            Message = Loc.T("history.cantRead", ex.Message);
         }
         finally
         {
@@ -224,7 +286,7 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
             RaiseHeader();
         }
         catch (OperationCanceledException) { }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DriveNotAvailableException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DriveNotAvailableException or DriveLockedException or System.Security.Cryptography.CryptographicException)
         {
             Message = ex.Message;
         }
@@ -235,20 +297,46 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
         }
     }
 
+    private async Task LoadDeletedAsync()
+    {
+        var set = _set;
+        if (set == null) return;
+        Loading = true;
+        try
+        {
+            var list = await Task.Run(() => _app.Service.Engine.DeletedFiles(set));
+            if (!ReferenceEquals(set, _set) || !ShowDeleted) return;
+            _deleted = list;
+            ApplyFilter();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DriveNotAvailableException or DriveLockedException)
+        {
+            Message = ex.Message;
+        }
+        finally
+        {
+            Loading = false;
+            CommandManager.InvalidateRequerySuggested();
+        }
+    }
+
     private void ApplyFilter()
     {
-        if (_details == null)
+        var source = ShowDeleted ? _deleted : _details?.Files;
+        if (source == null)
         {
             Files = new ObservableCollection<FileRowViewModel>();
+            Raise(nameof(FilesEmpty));
             return;
         }
         var q = Search.Trim().Replace('\\', '/');
         var rows = new List<FileRowViewModel>();
-        foreach (var f in _details.Files)
+        bool multiRoot = _details?.Roots.Count > 1 || (ShowDeleted && _set!.Folders.Count > 1);
+        foreach (var f in source)
         {
-            if (OnlyChanged && f.Change == ChangeKind.Unchanged) continue;
+            if (!ShowDeleted && OnlyChanged && f.Change == ChangeKind.Unchanged) continue;
             if (q.Length > 0 && f.Key.Path.IndexOf(q, StringComparison.OrdinalIgnoreCase) < 0) continue;
-            rows.Add(new FileRowViewModel(this, f, _details.Roots.Count > 1));
+            rows.Add(new FileRowViewModel(this, f, multiRoot));
             // The list virtualises, but building millions of rows still costs; cap and say so.
             if (rows.Count >= 5000) break;
         }
@@ -263,10 +351,8 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
     private async Task RestoreEverythingAsync()
     {
         if (_set == null || _snapshot == null) return;
-        if (!Ui.Confirm($"Put every file in {_set.Name} back as it was at {_snapshot.Label}?\n\n" +
-                        "Files that changed since then are kept as a new version first, so you can undo this. Files added since then are left alone.",
-                        "Restore everything")) return;
-        Status = "Restoring…";
+        if (!Ui.Confirm(Loc.T("history.confirmAll", _set.Name, _snapshot.Label), Loc.T("history.confirmAllTitle"))) return;
+        Status = Loc.T("history.restoring");
         var set = _set;
         var name = _snapshot.Info.Name;
         var r = await Task.Run(() => _app.Service.Engine.RestoreSnapshotAsync(set, name, null));
@@ -278,9 +364,9 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
     private async Task RestoreToFolderAsync()
     {
         if (_set == null || _snapshot == null) return;
-        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = $"Restore {_set.Name} ({_snapshot.Label}) to…" };
+        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = Loc.T("history.restoreTo", _set.Name, _snapshot.Label) };
         if (dlg.ShowDialog() != true) return;
-        Status = "Restoring…";
+        Status = Loc.T("history.restoring");
         var set = _set;
         var name = _snapshot.Info.Name;
         var r = await Task.Run(() => _app.Service.Engine.RestoreSnapshotAsync(set, name, dlg.FolderName));
@@ -291,31 +377,32 @@ public sealed class HistoryViewModel : ObservableObject, IDisposable
     internal async Task RestoreFileAsync(SnapshotFile file)
     {
         if (_set == null) return;
-        Status = $"Restoring {file.Name}…";
+        Status = Loc.T("history.restoringFile", file.Name);
         var set = _set;
         var r = await Task.Run(() => _app.Service.Engine.RestoreAsync(set, new[] { (file.Key, file.Entry) }, null));
-        Status = r.Failed.Count > 0 ? $"Could not restore {file.Name}. Is it open in another program?"
-            : r.Restored == 0 ? $"{file.Name} is already this version."
-            : $"Restored {file.Name}. The replaced copy was kept as a new version.";
+        Status = r.Failed.Count > 0 ? Loc.T("history.restoreFailedFile", file.Name)
+            : r.Restored == 0 ? Loc.T("history.alreadyVersion", file.Name)
+            : Loc.T("history.restoredFile", file.Name);
         var keep = Status;
-        await LoadSnapshotsAsync();
+        await LoadSnapshotsAsync(keepSelection: true);
         Status = keep;
     }
 
     internal async Task OpenFileAsync(SnapshotFile file)
     {
-        if (_set == null || _snapshot == null) return;
+        if (_set == null) return;
         var set = _set;
-        var label = _snapshot.Label;
+        var label = file.DeletedAt is { } d ? Format.SnapshotLabel(d) : _snapshot?.Label ?? "version";
         var path = await Task.Run(() => _app.Service.Engine.ExtractForViewing(set, file.Entry, label));
         WindowsIntegration.OpenWithShell(path);
     }
 
     private static string Summary(RestoreResult r, string? folder)
     {
-        var s = $"Restored {Format.Plural(r.Restored, "file", "files")}{(folder != null ? " to " + folder : "")}.";
-        if (r.Skipped > 0) s += $" {r.Skipped} already matched.";
-        if (r.Failed.Count > 0) s += $" {r.Failed.Count} could not be written (open in another program?).";
+        var files = Format.Plural(r.Restored, "file", "files");
+        var s = folder != null ? Loc.T("history.summary.restoredTo", files, folder) : Loc.T("history.summary.restored", files);
+        if (r.Skipped > 0) s += Loc.T("history.summary.matched", r.Skipped);
+        if (r.Failed.Count > 0) s += Loc.T("history.summary.failed", r.Failed.Count);
         return s;
     }
 
@@ -337,7 +424,7 @@ public sealed class SnapshotItem : ObservableObject
     public SnapshotInfo Info { get; }
     public ICommand Pick { get; }
     public string Label => Format.SnapshotLabel(Info.CreatedUtc);
-    public string Meta => $"{Info.TriggerText} · {Info.Changed} changed";
+    public string Meta => Loc.T("history.meta", Ui.TriggerText(Info.Trigger), Format.Plural(Info.Changed, "changed", "changed"));
     public string Size => Format.Size(Info.Bytes);
 
     public bool IsSelected
@@ -378,13 +465,7 @@ public sealed class FileRowViewModel
     public bool HasFolder => Folder.Length > 0;
     public string FullPath => _file.Key.FullPath;
     public string Size => Format.Size(_file.Entry.Size);
-    public string Change => _file.Change switch
-    {
-        ChangeKind.Added => "Added",
-        ChangeKind.Modified => "Modified",
-        ChangeKind.Deleted => "Deleted",
-        _ => "Unchanged",
-    };
+    public string Change => _file.DeletedAt is { } d ? Loc.T("history.deletedAt", Format.When(d)) : Loc.T("change." + _file.Change);
     public Brush TagBackground => _file.Change switch
     {
         ChangeKind.Added => Ui.Brush("GreenTint"),
@@ -400,5 +481,5 @@ public sealed class FileRowViewModel
         _ => Ui.Brush("TextSecondary"),
     };
     /// <summary>A deleted file's last version is restored from the snapshot before.</summary>
-    public string RestoreText => _file.Change == ChangeKind.Deleted ? "Bring back" : "Restore";
+    public string RestoreText => Loc.T(_file.Change == ChangeKind.Deleted ? "history.bringBack" : "history.restore");
 }

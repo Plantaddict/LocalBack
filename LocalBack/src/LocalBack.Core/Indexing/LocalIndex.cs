@@ -7,6 +7,9 @@ public sealed record IndexedFile(long Size, long MTimeTicks, int Attributes, str
 
 public sealed record FileVersion(string Hash, long Size, DateTimeOffset FirstSeen, DateTimeOffset? Superseded);
 
+/// <summary>A file that is no longer in the set, with its last backed-up version.</summary>
+public sealed record DeletedFile(FileKey Key, string Hash, long Size, long MTimeTicks, DateTimeOffset DeletedAt);
+
 public sealed record SetState(string? LastManifest, DateTimeOffset? LastRun, DateTimeOffset? LastFullCheck, string? LastError);
 
 /// <summary>
@@ -25,6 +28,7 @@ public sealed class LocalIndex : IDisposable
         _db = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path, Pooling = false }.ToString());
         _db.Open();
         Exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA cache_size=-2000;");
+        Migrate();
         Exec("""
             CREATE TABLE IF NOT EXISTS sets_state(
               set_id TEXT PRIMARY KEY, last_manifest TEXT, last_run INTEGER, last_full INTEGER, last_error TEXT);
@@ -34,8 +38,9 @@ public sealed class LocalIndex : IDisposable
               PRIMARY KEY(set_id, root, path));
             CREATE TABLE IF NOT EXISTS versions(
               set_id TEXT NOT NULL, root TEXT NOT NULL, path TEXT NOT NULL, hash TEXT NOT NULL, size INTEGER NOT NULL,
-              first_seen INTEGER NOT NULL, superseded INTEGER,
+              first_seen INTEGER NOT NULL, superseded INTEGER, mtime INTEGER NOT NULL DEFAULT 0,
               PRIMARY KEY(set_id, root, path, first_seen));
+            CREATE INDEX IF NOT EXISTS versions_open ON versions(set_id, superseded);
             CREATE TABLE IF NOT EXISTS pending(
               set_id TEXT NOT NULL, path TEXT NOT NULL, queued INTEGER NOT NULL,
               PRIMARY KEY(set_id, path));
@@ -45,6 +50,27 @@ public sealed class LocalIndex : IDisposable
     public void Dispose()
     {
         lock (_gate) _db.Dispose();
+    }
+
+    /// <summary>Columns added after the first release.</summary>
+    private void Migrate()
+    {
+        try
+        {
+            using var check = _db.CreateCommand();
+            check.CommandText = "SELECT COUNT(*) FROM pragma_table_info('versions') WHERE name='mtime'";
+            if (Convert.ToInt32(check.ExecuteScalar()) == 0 && TableExists("versions"))
+                Exec("ALTER TABLE versions ADD COLUMN mtime INTEGER NOT NULL DEFAULT 0");
+        }
+        catch (SqliteException) { }
+    }
+
+    private bool TableExists(string name)
+    {
+        using var cmd = _db.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=$n";
+        cmd.Parameters.AddWithValue("$n", name);
+        return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
     }
 
     private void Exec(string sql)
@@ -177,10 +203,11 @@ public sealed class LocalIndex : IDisposable
 
             using var open = _db.CreateCommand();
             open.Transaction = tx;
-            open.CommandText = "INSERT OR REPLACE INTO versions(set_id, root, path, hash, size, first_seen, superseded) VALUES($s,$r,$p,$h,$size,$t,NULL)";
+            open.CommandText = "INSERT OR REPLACE INTO versions(set_id, root, path, hash, size, first_seen, superseded, mtime) VALUES($s,$r,$p,$h,$size,$t,NULL,$m)";
             var oS = open.Parameters.Add("$s", SqliteType.Text); var oR = open.Parameters.Add("$r", SqliteType.Text);
             var oP = open.Parameters.Add("$p", SqliteType.Text); var oH = open.Parameters.Add("$h", SqliteType.Text);
             var oSize = open.Parameters.Add("$size", SqliteType.Integer); var oT = open.Parameters.Add("$t", SqliteType.Integer);
+            var oM = open.Parameters.Add("$m", SqliteType.Integer);
 
             foreach (var c in changes)
             {
@@ -207,7 +234,7 @@ public sealed class LocalIndex : IDisposable
                     if (c.New is { } nv)
                     {
                         oS.Value = setId; oR.Value = c.Key.Root; oP.Value = c.Key.Path; oH.Value = nv.Hash;
-                        oSize.Value = nv.Size; oT.Value = Ticks(when);
+                        oSize.Value = nv.Size; oT.Value = Ticks(when); oM.Value = nv.MTimeTicks;
                         open.ExecuteNonQuery();
                     }
                 }
@@ -235,19 +262,19 @@ public sealed class LocalIndex : IDisposable
             }
             EnsureState(setId, tx);
 
-            var open = new Dictionary<FileKey, (string Hash, long Size, DateTimeOffset First)>(FileKey.Comparer);
+            var open = new Dictionary<FileKey, (string Hash, long Size, DateTimeOffset First, long MTime)>(FileKey.Comparer);
             using var ins = _db.CreateCommand();
             ins.Transaction = tx;
-            ins.CommandText = "INSERT OR REPLACE INTO versions(set_id, root, path, hash, size, first_seen, superseded) VALUES($s,$r,$p,$h,$size,$f,$x)";
+            ins.CommandText = "INSERT OR REPLACE INTO versions(set_id, root, path, hash, size, first_seen, superseded, mtime) VALUES($s,$r,$p,$h,$size,$f,$x,$m)";
             var pS = ins.Parameters.Add("$s", SqliteType.Text); var pR = ins.Parameters.Add("$r", SqliteType.Text);
             var pP = ins.Parameters.Add("$p", SqliteType.Text); var pH = ins.Parameters.Add("$h", SqliteType.Text);
             var pSize = ins.Parameters.Add("$size", SqliteType.Integer); var pF = ins.Parameters.Add("$f", SqliteType.Integer);
-            var pX = ins.Parameters.Add("$x", SqliteType.Integer);
+            var pX = ins.Parameters.Add("$x", SqliteType.Integer); var pM = ins.Parameters.Add("$m", SqliteType.Integer);
 
-            void Close(FileKey k, (string Hash, long Size, DateTimeOffset First) v, DateTimeOffset? superseded)
+            void Close(FileKey k, (string Hash, long Size, DateTimeOffset First, long MTime) v, DateTimeOffset? superseded)
             {
                 pS.Value = setId; pR.Value = k.Root; pP.Value = k.Path; pH.Value = v.Hash; pSize.Value = v.Size;
-                pF.Value = Ticks(v.First); pX.Value = superseded is { } s ? Ticks(s) : DBNull.Value;
+                pF.Value = Ticks(v.First); pX.Value = superseded is { } s ? Ticks(s) : DBNull.Value; pM.Value = v.MTime;
                 ins.ExecuteNonQuery();
             }
 
@@ -260,7 +287,7 @@ public sealed class LocalIndex : IDisposable
                 {
                     if (open.TryGetValue(key, out var cur) && cur.Hash == e.Hash) continue;
                     if (open.TryGetValue(key, out cur)) Close(key, cur, m.CreatedUtc);
-                    open[key] = (e.Hash, e.Size, m.CreatedUtc);
+                    open[key] = (e.Hash, e.Size, m.CreatedUtc, e.MTimeTicks);
                 }
                 foreach (var key in open.Keys.Where(k => !map.ContainsKey(k)).ToList())
                 {
@@ -315,6 +342,30 @@ public sealed class LocalIndex : IDisposable
             var list = new List<FileVersion>();
             while (r.Read())
                 list.Add(new FileVersion(r.GetString(0), r.GetInt64(1), FromTicks(r.GetInt64(2)), r.IsDBNull(3) ? null : FromTicks(r.GetInt64(3))));
+            return list;
+        }
+    }
+
+    /// <summary>Files that were backed up at some point but are not in the set now, with their last version. Newest deletions first.</summary>
+    public List<DeletedFile> DeletedFiles(string setId)
+    {
+        lock (_gate)
+        {
+            using var cmd = _db.CreateCommand();
+            cmd.CommandText = """
+                SELECT v.root, v.path, v.hash, v.size, v.mtime, v.superseded
+                FROM versions v
+                WHERE v.set_id = $s
+                  AND v.superseded IS NOT NULL
+                  AND v.superseded = (SELECT MAX(superseded) FROM versions w WHERE w.set_id = v.set_id AND w.root = v.root AND w.path = v.path)
+                  AND NOT EXISTS (SELECT 1 FROM files f WHERE f.set_id = v.set_id AND f.root = v.root AND f.path = v.path)
+                ORDER BY v.superseded DESC
+                """;
+            cmd.Parameters.AddWithValue("$s", setId);
+            using var r = cmd.ExecuteReader();
+            var list = new List<DeletedFile>();
+            while (r.Read())
+                list.Add(new DeletedFile(new FileKey(r.GetString(0), r.GetString(1)), r.GetString(2), r.GetInt64(3), r.GetInt64(4), FromTicks(r.GetInt64(5))));
             return list;
         }
     }

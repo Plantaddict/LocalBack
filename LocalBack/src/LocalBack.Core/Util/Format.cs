@@ -5,7 +5,14 @@ namespace LocalBack.Core.Util;
 /// <summary>Human-friendly sizes and times, matching the wording in the design.</summary>
 public static class Format
 {
-    private static readonly CultureInfo En = CultureInfo.GetCultureInfo("en-GB");
+    /// <summary>Set by the app for the chosen UI language; the CLI keeps English.</summary>
+    public static CultureInfo Culture { get; set; } = CultureInfo.GetCultureInfo("en-GB");
+    public static string Today { get; set; } = "today";
+    public static string Yesterday { get; set; } = "Yesterday";
+    /// <summary>(count, singular, plural) → text; lets the app supply languages with more plural forms.</summary>
+    public static Func<int, string, string, string>? PluralProvider { get; set; }
+
+    private static CultureInfo En => Culture;
 
     public static string Size(long bytes)
     {
@@ -24,8 +31,8 @@ public static class Format
     {
         var local = utc.ToLocalTime();
         var today = (now ?? DateTimeOffset.Now).ToLocalTime().Date;
-        if (local.Date == today) return local.ToString("HH:mm", En) + " today";
-        if (local.Date == today.AddDays(-1)) return "Yesterday " + local.ToString("HH:mm", En);
+        if (local.Date == today) return local.ToString("HH:mm", En) + " " + Today;
+        if (local.Date == today.AddDays(-1)) return Yesterday + " " + local.ToString("HH:mm", En);
         return local.ToString("ddd d MMM, HH:mm", En);
     }
 
@@ -34,10 +41,13 @@ public static class Format
     {
         var local = utc.ToLocalTime();
         var today = (now ?? DateTimeOffset.Now).ToLocalTime().Date;
-        if (local.Date == today) return "Today " + local.ToString("HH:mm", En);
-        if (local.Date == today.AddDays(-1)) return "Yesterday " + local.ToString("HH:mm", En);
+        if (local.Date == today) return Capitalize(Today) + " " + local.ToString("HH:mm", En);
+        if (local.Date == today.AddDays(-1)) return Yesterday + " " + local.ToString("HH:mm", En);
         return local.ToString("ddd d MMM, HH:mm", En);
     }
 
-    public static string Plural(int n, string one, string many) => $"{n} {(n == 1 ? one : many)}";
+    private static string Capitalize(string s) => s.Length == 0 ? s : char.ToUpper(s[0], Culture) + s[1..];
+
+    public static string Plural(int n, string one, string many) =>
+        PluralProvider?.Invoke(n, one, many) ?? $"{n} {(n == 1 ? one : many)}";
 }

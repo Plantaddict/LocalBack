@@ -156,6 +156,39 @@ public class ScreensTests
         Snap(tray, "Tray");
         tray.Close();
 
+        Step("deleted files");
+        main.ViewModel.ShowHistory(set1, null);
+        Pump(1000);
+        var hist = (HistoryViewModel)main.ViewModel.Current;
+        hist.ShowDeleted = true;
+        Pump(1500);
+        Assert.Single(hist.Files); // old-draft.docx
+        Snap(main, "History-deleted");
+        hist.ShowDeleted = false;
+
+        Step("unlock window");
+        var encDir = Path.Combine(root, "enc");
+        Directory.CreateDirectory(encDir);
+        var encStore = Core.Storage.DriveStore.OpenOrCreate(encDir, "secret-pw");
+        Core.Crypto.KeyStore.Forget(encStore.Identity.Id);
+        var unlock = new UnlockWindow(Core.Storage.DriveStore.TryOpen(encDir)!);
+        unlock.Show();
+        Pump(300);
+        Snap(unlock, "Unlock");
+        unlock.Close();
+
+        Step("polish");
+        Localization.Loc.Instance.Apply("pl");
+        main.ViewModel.Navigate(Page.Sets);
+        Pump(500);
+        Snap(main, "Main-pl");
+        var addPl = new AddSetWindow(null);
+        addPl.Show();
+        Pump(500);
+        Snap(addPl, "AddSet-pl");
+        addPl.Close();
+        Localization.Loc.Instance.Apply("en");
+
         Step("close");
         main.Close();
         Pump(100);

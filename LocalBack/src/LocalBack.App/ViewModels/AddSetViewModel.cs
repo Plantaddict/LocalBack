@@ -1,15 +1,20 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using System.Windows.Media;
+using LocalBack.App.Localization;
 using LocalBack.Core.Drives;
+using LocalBack.Core.Engine;
 using LocalBack.Core.Model;
 using LocalBack.Core.Scanning;
 using LocalBack.Core.Service;
+using LocalBack.Core.Storage;
 using LocalBack.Core.Util;
 
 namespace LocalBack.App.ViewModels;
 
-/// <summary>"Add backup set" dialog; also used to edit an existing set (drive cannot change then).</summary>
+public enum DestinationState { None, New, Plain, Encrypted, Locked }
+
+/// <summary>"Add backup set" dialog; also used to edit an existing set (destination cannot change then).</summary>
 public sealed class AddSetViewModel : ObservableObject
 {
     private readonly App _app = App.Current;
@@ -19,7 +24,9 @@ public sealed class AddSetViewModel : ObservableObject
     private ScheduleChoice _schedule;
     private string _custom = "";
     private bool _keepHistory = true;
+    private bool _protect;
     private string _error = "";
+    private DestinationState _destState;
 
     public ObservableCollection<string> Folders { get; } = new();
     public ObservableCollection<DriveChoice> Drives { get; } = new();
@@ -27,18 +34,21 @@ public sealed class AddSetViewModel : ObservableObject
     public List<RuleTile> Rules { get; }
     public ObservableCollection<string> CustomPatterns { get; } = new();
 
+    /// <summary>Set by the window from its PasswordBoxes (they cannot be bound).</summary>
+    public string Password { get; set; } = "";
+    public string PasswordRepeat { get; set; } = "";
+
     public event Action<bool>? CloseRequested;
 
     public AddSetViewModel(BackupSet? editing)
     {
         _editing = editing;
-        var check = DateTime.Today.Add(_app.Service.Settings.DailyCheckAt).ToString("HH:mm");
         Schedules = new()
         {
-            new(RunSchedule.Live, "When files change (live)"),
-            new(RunSchedule.Hourly, "Every hour"),
-            new(RunSchedule.Daily, $"Daily at {check}"),
-            new(RunSchedule.OnPlugIn, "When the drive is plugged in"),
+            new(RunSchedule.Live, Ui.ScheduleText(RunSchedule.Live)),
+            new(RunSchedule.Hourly, Ui.ScheduleText(RunSchedule.Hourly)),
+            new(RunSchedule.Daily, Ui.ScheduleText(RunSchedule.Daily)),
+            new(RunSchedule.OnPlugIn, Ui.ScheduleText(RunSchedule.OnPlugIn)),
         };
         var enabled = editing?.EnabledRules ?? ExclusionRules.DefaultEnabled.ToList();
         Rules = ExclusionRules.All.Select(r => new RuleTile(r, enabled.Contains(r.Id), () => Raise(nameof(RulesSummary)))).ToList();
@@ -67,25 +77,38 @@ public sealed class AddSetViewModel : ObservableObject
         AddPattern = new RelayCommand(AddCustom);
         RemovePattern = new RelayCommand(p => { if (p is string s) CustomPatterns.Remove(s); Raise(nameof(RulesSummary)); });
         RefreshDrives = new RelayCommand(LoadDrives, () => !IsEditing);
+        BrowseDestination = new RelayCommand(PickDestination, () => !IsEditing);
         Create = new RelayCommand(Submit);
         Cancel = new RelayCommand(() => CloseRequested?.Invoke(false));
         Folders.CollectionChanged += (_, _) => { Error = ""; SuggestName(); };
     }
 
     public bool IsEditing => _editing != null;
-    public string Title => IsEditing ? "Edit backup set" : "Add backup set";
-    public string SubmitText => IsEditing ? "Save changes" : "Create and back up";
+    public string Title => Loc.T(IsEditing ? "addset.editTitle" : "addset.title");
+    public string SubmitText => Loc.T(IsEditing ? "addset.save" : "addset.create");
 
     public ICommand AddFolder { get; }
     public ICommand RemoveFolder { get; }
     public ICommand AddPattern { get; }
     public ICommand RemovePattern { get; }
     public ICommand RefreshDrives { get; }
+    public ICommand BrowseDestination { get; }
     public ICommand Create { get; }
     public ICommand Cancel { get; }
 
     public string Name { get => _name; set { if (Set(ref _name, value)) Error = ""; } }
-    public DriveChoice? SelectedDrive { get => _drive; set { if (Set(ref _drive, value)) Error = ""; } }
+
+    public DriveChoice? SelectedDrive
+    {
+        get => _drive;
+        set
+        {
+            if (!Set(ref _drive, value)) return;
+            Error = "";
+            UpdateDestinationState();
+        }
+    }
+
     public ScheduleChoice SelectedSchedule { get => _schedule; set => Set(ref _schedule, value); }
     public string CustomPattern { get => _custom; set => Set(ref _custom, value); }
     public bool KeepHistory { get => _keepHistory; set => Set(ref _keepHistory, value); }
@@ -93,18 +116,78 @@ public sealed class AddSetViewModel : ObservableObject
     public bool HasError => Error.Length > 0;
     public bool NoDrives => Drives.Count == 0;
 
-    public string RulesSummary =>
-        $"{Rules.Count(r => r.IsOn) + CustomPatterns.Count} rules on · files still being written are picked up next pass";
+    // ---- destination and password ----
+
+    public DestinationState DestState
+    {
+        get => _destState;
+        private set
+        {
+            if (!Set(ref _destState, value)) return;
+            Raise(nameof(ShowProtect));
+            Raise(nameof(ShowPasswordFields));
+            Raise(nameof(ShowUnlock));
+            Raise(nameof(DestinationNote));
+            Raise(nameof(HasDestinationNote));
+        }
+    }
+
+    /// <summary>"Protect with a password" is offered only for a destination used for the first time.</summary>
+    public bool ShowProtect => DestState == DestinationState.New;
+    public bool Protect
+    {
+        get => _protect;
+        set { if (Set(ref _protect, value)) { Raise(nameof(ShowPasswordFields)); Error = ""; } }
+    }
+    public bool ShowPasswordFields => DestState == DestinationState.New && Protect;
+    public bool ShowUnlock => DestState == DestinationState.Locked;
+    public string DestinationNote => DestState switch
+    {
+        DestinationState.Encrypted => Loc.T("addset.password.unlocked"),
+        DestinationState.Plain => Loc.T("addset.password.plain"),
+        DestinationState.Locked => Loc.T("addset.password.unlockHint"),
+        _ => "",
+    };
+    public bool HasDestinationNote => DestinationNote.Length > 0;
+
+    private void UpdateDestinationState()
+    {
+        if (IsEditing || _drive?.Root == null) { DestState = DestinationState.None; return; }
+        var store = DriveStore.TryOpen(_drive.Root);
+        DestState = store == null ? DestinationState.New
+            : store.IsLocked ? DestinationState.Locked
+            : store.IsEncrypted ? DestinationState.Encrypted
+            : DestinationState.Plain;
+    }
+
+    public string RulesSummary => Loc.T("addset.rulesOn", Rules.Count(r => r.IsOn) + CustomPatterns.Count);
 
     private void LoadDrives()
     {
         var current = _drive?.Root;
+        var custom = Drives.Where(d => d.IsFolder).ToList();
         Drives.Clear();
         foreach (var d in App.BackupDriveChoices())
-            Drives.Add(new DriveChoice(d.Root, $"{d.DisplayName} ({Format.Size(d.Free)} free)"));
+            Drives.Add(new DriveChoice(d.Root, Loc.T("addset.driveChoice", d.DisplayName, Format.Size(d.Free))));
+        foreach (var c in custom) Drives.Add(c);
         SelectedDrive = Drives.FirstOrDefault(d => d.Root == current)
                         ?? Drives.FirstOrDefault(d => DriveLocator.Describe(d.Root!)?.HasStore == true)
                         ?? Drives.FirstOrDefault();
+        Raise(nameof(NoDrives));
+    }
+
+    private void PickDestination()
+    {
+        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = Loc.T("addset.pickDestination") };
+        if (dlg.ShowDialog() != true) return;
+        var root = PathUtil.NormalizeFolder(dlg.FolderName);
+        var existing = Drives.FirstOrDefault(d => d.Root != null && PathUtil.Comparer.Equals(d.Root, root));
+        if (existing == null)
+        {
+            existing = new DriveChoice(root, Loc.T("addset.folderChoice", root), IsFolder: true);
+            Drives.Add(existing);
+        }
+        SelectedDrive = existing;
         Raise(nameof(NoDrives));
     }
 
@@ -121,7 +204,7 @@ public sealed class AddSetViewModel : ObservableObject
 
     private void PickFolders()
     {
-        var dlg = new Microsoft.Win32.OpenFolderDialog { Multiselect = true, Title = "Choose folders to back up" };
+        var dlg = new Microsoft.Win32.OpenFolderDialog { Multiselect = true, Title = Loc.T("addset.chooseFolders") };
         if (dlg.ShowDialog() != true) return;
         foreach (var f in dlg.FolderNames)
             if (!Folders.Contains(f, StringComparer.OrdinalIgnoreCase)) Folders.Add(f);
@@ -145,12 +228,12 @@ public sealed class AddSetViewModel : ObservableObject
     {
         if (CustomPattern.Trim().Length > 0) AddCustom();
         if (HasError) return;
-        if (Name.Trim().Length == 0) { Error = "Give the set a name."; return; }
-        if (Folders.Count == 0) { Error = "Add at least one folder to back up."; return; }
-        try { Core.Service.BackupService.NormalizeFolders(Folders); }
+        if (Name.Trim().Length == 0) { Error = Loc.T("addset.err.name"); return; }
+        if (Folders.Count == 0) { Error = Loc.T("addset.err.folders"); return; }
+        try { BackupService.NormalizeFolders(Folders); }
         catch (ArgumentException ex) { Error = ex.Message; return; }
         var missing = Folders.FirstOrDefault(f => !Directory.Exists(f));
-        if (missing != null) { Error = $"{missing} does not exist."; return; }
+        if (missing != null) { Error = Loc.T("addset.err.missing", missing); return; }
         var rules = Rules.Where(r => r.IsOn).Select(r => r.Rule.Id).ToList();
 
         if (_editing != null)
@@ -167,24 +250,41 @@ public sealed class AddSetViewModel : ObservableObject
             return;
         }
 
-        if (SelectedDrive?.Root is not { } root) { Error = "Plug in a USB drive or external disk to keep the backups on."; return; }
+        if (SelectedDrive?.Root is not { } root) { Error = Loc.T("addset.err.noDrive"); return; }
         var driveRoot = PathUtil.NormalizeFolder(root);
         var clash = Folders.FirstOrDefault(f => PathUtil.IsUnder(PathUtil.NormalizeFolder(f), driveRoot) || PathUtil.IsUnder(driveRoot, PathUtil.NormalizeFolder(f)));
-        if (clash != null) { Error = $"{clash} is on the backup drive itself. Pick a different drive or folder."; return; }
+        if (clash != null) { Error = Loc.T("addset.err.onDrive", clash); return; }
+
+        string? password = null;
+        if (ShowPasswordFields)
+        {
+            if (Password.Length < 8) { Error = Loc.T("addset.password.short"); return; }
+            if (Password != PasswordRepeat) { Error = Loc.T("addset.password.mismatch"); return; }
+            password = Password;
+        }
+        else if (ShowUnlock)
+        {
+            if (Password.Length == 0) { Error = Loc.T("addset.password.unlockHint"); return; }
+            password = Password;
+        }
 
         try
         {
-            _app.Service.AddSet(Name, Folders, root, SelectedSchedule.Value, rules, CustomPatterns, KeepHistory);
+            _app.Service.AddSet(Name, Folders, root, SelectedSchedule.Value, rules, CustomPatterns, KeepHistory, password);
             CloseRequested?.Invoke(true);
+        }
+        catch (DriveLockedException)
+        {
+            Error = Loc.T("addset.password.wrong");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Error = $"Could not write to {SelectedDrive.Text}: {ex.Message}";
+            Error = Loc.T("addset.err.write", SelectedDrive.Text, ex.Message);
         }
     }
 }
 
-public sealed record DriveChoice(string? Root, string Text);
+public sealed record DriveChoice(string? Root, string Text, bool IsFolder = false);
 
 public sealed record ScheduleChoice(RunSchedule Value, string Text);
 
@@ -203,7 +303,7 @@ public sealed class RuleTile : ObservableObject
     }
 
     public ExclusionRule Rule { get; }
-    public string Title => Rule.Title;
+    public string Title => Ui.RuleTitle(Rule);
     public string Patterns => Rule.Description;
     public ICommand Toggle { get; }
 

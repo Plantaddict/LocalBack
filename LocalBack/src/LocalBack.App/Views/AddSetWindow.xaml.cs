@@ -1,3 +1,5 @@
+using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using LocalBack.App.ViewModels;
 using LocalBack.Core.Model;
@@ -38,5 +40,13 @@ public partial class AddSetWindow : DialogWindow
         if (e.Key != Key.Enter) return;
         _vm.AddPattern.Execute(null);
         e.Handled = true;
+    }
+
+    /// <summary>PasswordBoxes cannot be bound; hand their text to the view model as it changes.</summary>
+    private void Password_Changed(object sender, RoutedEventArgs e)
+    {
+        var box = (PasswordBox)sender;
+        if (box == PasswordBox2) _vm.PasswordRepeat = box.Password;
+        else _vm.Password = box.Password;
     }
 }

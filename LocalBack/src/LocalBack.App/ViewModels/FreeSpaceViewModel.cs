@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using System.Windows.Media;
+using LocalBack.App.Localization;
 using LocalBack.Core.Model;
 using LocalBack.Core.Retention;
 using LocalBack.Core.Service;
@@ -19,7 +20,7 @@ public sealed class FreeSpaceViewModel : ObservableObject
     private bool _busy;
     private string _offenders = "";
     private double _currentPct, _olderPct;
-    private string _currentText = "Current files …", _olderText = "Older versions …";
+    private string _currentText = Loc.T("free.current.loading"), _olderText = Loc.T("free.older.loading");
     private readonly CancellationTokenSource _cts = new();
 
     public List<PlanOption> Options { get; }
@@ -41,16 +42,16 @@ public sealed class FreeSpaceViewModel : ObservableObject
     public ICommand NotNow { get; }
 
     public string DriveName => BackupService.DriveName(_drive);
-    public string Title => _lowSpace ? $"{DriveName} is almost full" : $"Free up space on {DriveName}";
+    public string Title => Loc.T(_lowSpace ? "free.title.low" : "free.title", DriveName);
 
     public string Summary
     {
         get
         {
             var info = _app.Service.SpaceInfo(_drive)!;
-            var s = $"{Format.Size(info.Free)} free of {Format.Size(info.Total)}.";
-            if (info.NextRunEstimate > 0) s += $" The next backup needs about {Format.Size(info.NextRunEstimate)}.";
-            return s + " Old copies of files you have changed many times take most of the space.";
+            var s = Loc.T("free.summary", Format.Size(info.Free), Format.Size(info.Total));
+            if (info.NextRunEstimate > 0) s += Loc.T("free.summary.next", Format.Size(info.NextRunEstimate));
+            return s + Loc.T("free.summary.tail");
         }
     }
 
@@ -76,33 +77,33 @@ public sealed class FreeSpaceViewModel : ObservableObject
     public bool AutoFree { get => _auto; set => Set(ref _auto, value); }
     public bool Busy { get => _busy; private set { if (Set(ref _busy, value)) Raise(nameof(ApplyText)); } }
 
-    public string ApplyText => Busy ? "Freeing up…"
-        : Picked?.Preview is { } p ? (p.BytesFreed > 0 ? $"Free up {Format.Size(p.BytesFreed)}" : "Nothing to free")
-        : "Free up…";
+    public string ApplyText => Busy ? Loc.T("free.freeing")
+        : Picked?.Preview is { } p ? (p.BytesFreed > 0 ? Loc.T("free.freeUp", Format.Size(p.BytesFreed)) : Loc.T("free.nothing"))
+        : Loc.T("free.pending");
 
-    /// <summary>Works out each plan's exact saving in the background.</summary>
+    /// <summary>Works out each plan's exact saving in the background, in one walk.</summary>
     public async Task LoadAsync()
     {
         var (_, total) = _drive.Space();
-        List<Core.Retention.PrunePreview> previews;
+        List<PrunePreview> previews;
         try
         {
             previews = await _app.Service.PreviewAllAsync(_drive, Options.Select(o => o.Plan).ToList(), _cts.Token);
         }
         catch (OperationCanceledException) { return; }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Security.Cryptography.CryptographicException)
         {
-            Offenders = $"Could not read the drive: {ex.Message}";
+            Offenders = Loc.T("free.cantRead", ex.Message);
             return;
         }
         for (int i = 0; i < Options.Count; i++) Options[i].Preview = previews[i];
         var first = previews[0];
         CurrentPercent = total > 0 ? 100.0 * first.CurrentBytes / total : 0;
         OlderPercent = total > 0 ? 100.0 * first.OlderBytes / total : 0;
-        CurrentText = $"Current files {Format.Size(first.CurrentBytes)}";
-        OlderText = $"Older versions {Format.Size(first.OlderBytes)}";
-        var top = first.Offenders.Take(2).Select(x => $"{x.Name} ({x.Versions} versions, {Format.Size(x.Bytes)})").ToList();
-        Offenders = top.Count > 0 ? "Biggest offenders: " + string.Join(", ", top) + "." : "";
+        CurrentText = Loc.T("free.current", Format.Size(first.CurrentBytes));
+        OlderText = Loc.T("free.older", Format.Size(first.OlderBytes));
+        var top = first.Offenders.Take(2).Select(x => Loc.T("free.offender", x.Name, Format.Plural(x.Versions, "version", "versions"), Format.Size(x.Bytes))).ToList();
+        Offenders = top.Count > 0 ? Loc.T("free.offenders", string.Join(", ", top)) : "";
         Raise(nameof(ApplyText));
         CommandManager.InvalidateRequerySuggested();
     }
@@ -119,7 +120,7 @@ public sealed class FreeSpaceViewModel : ObservableObject
                 s.AutoFreeSpace = AutoFree;
                 if (AutoFree) s.Retention = Picked.Plan;
             });
-            Ui.Info($"{Format.Size(freed)} freed on {DriveName}. The newest version of every file was kept.", "Free up space");
+            Ui.Info(Loc.T("free.done", Format.Size(freed), DriveName), Loc.T("free.doneTitle"));
             CloseRequested?.Invoke();
         }
         finally
@@ -143,8 +144,8 @@ public sealed class PlanOption : ObservableObject
     }
 
     public RetentionPlan Plan { get; }
-    public string Title => Plan.Title;
-    public string Description => Plan.Description;
+    public string Title => Ui.RetentionTitle(Plan);
+    public string Description => Ui.RetentionDescription(Plan);
     public string Frees => _preview == null ? "…" : Format.Size(_preview.BytesFreed);
 
     public PrunePreview? Preview

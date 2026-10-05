@@ -23,6 +23,9 @@ public sealed class BackupEngine
     /// <summary>Files newer than this with zero bytes are probably still being created.</summary>
     public TimeSpan YoungEmptyFileAge { get; set; } = TimeSpan.FromSeconds(5);
 
+    /// <summary>Files up to this size are hashed before copying (cheap, avoids writing duplicates); bigger ones are copied in one pass.</summary>
+    public long PreHashLimit { get; set; } = 64L * 1024 * 1024;
+
     public BackupEngine(LocalIndex index, string tempRoot)
     {
         _index = index;
@@ -64,6 +67,7 @@ public sealed class BackupEngine
         IProgress<BackupProgress>? progress, CancellationToken ct)
     {
         var started = DateTimeOffset.UtcNow;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
         var setStore = drive.Set(set.Id);
         setStore.SaveDefinition(set);
         drive.Blobs.CleanTemp();
@@ -147,6 +151,8 @@ public sealed class BackupEngine
 
         if (unavailable.Count > 0) Log.Warn($"Source folder missing, keeping previous copy of {unavailable.Count} changed paths");
 
+        var scanMs = clock.ElapsedMilliseconds;
+
         // 2. Copy new content to the drive.
         var toStore = now.Where(kv => !current.TryGetValue(kv.Key, out var old) || old.Size != kv.Value.Size || old.MTimeTicks != kv.Value.MTimeTicks).ToList();
         var hashes = new Dictionary<FileKey, string>(FileKey.Comparer);
@@ -168,11 +174,22 @@ public sealed class BackupEngine
             try
             {
                 using var src = new FileStream(full_, FileMode.Open, FileAccess.Read, FileShare.Read, Hashing.BufferSize, FileOptions.SequentialScan);
-                // While we hold the handle nobody can write, so hashing then copying sees one consistent content.
-                var hash = Hashing.Sha256(src);
-                if (!drive.Blobs.Exists(hash))
+                // While we hold the handle nobody can write, so what we hash is what we copy.
+                string hash;
+                if (st.Size <= PreHashLimit)
                 {
-                    src.Position = 0;
+                    // Small file: hash first, so an unchanged or duplicate file costs no write at all.
+                    hash = Hashing.Sha256(src);
+                    if (!drive.Blobs.Exists(hash))
+                    {
+                        src.Position = 0;
+                        hash = drive.Blobs.Put(src, ct);
+                        copied += st.Size;
+                    }
+                }
+                else
+                {
+                    // Large file: one pass that hashes and copies together; a duplicate is dropped afterwards.
                     hash = drive.Blobs.Put(src, ct);
                     copied += st.Size;
                 }
@@ -211,6 +228,8 @@ public sealed class BackupEngine
             else
                 now.Remove(key);
         }
+
+        var copyMs = clock.ElapsedMilliseconds;
 
         // 3. Diff against the previous snapshot.
         var changes = new List<LocalIndex.Change>();
@@ -268,7 +287,8 @@ public sealed class BackupEngine
             _index.AddPending(set.Id, unavailable, started);
 
         progress?.Report(new BackupProgress("Done", toStore.Count, toStore.Count, copied, null));
-        Log.Info($"Backup {set.Name}: +{added} ~{modified} -{deleted}, {Format.Size(copied)} copied, {deferred.Count} deferred ({trigger}{(full ? ", full" : "")})");
+        Log.Info($"Backup {set.Name}: +{added} ~{modified} -{deleted}, {Format.Size(copied)} copied, {deferred.Count} deferred ({trigger}{(full ? ", full" : "")}); " +
+                 $"{now.Count} files, scan {scanMs} ms, copy {copyMs - scanMs} ms, snapshot {clock.ElapsedMilliseconds - copyMs} ms");
 
         return new BackupResult
         {
@@ -361,6 +381,16 @@ public sealed class BackupEngine
     }
 
     public List<FileVersion> FileVersions(BackupSet set, FileKey key) => _index.Versions(set.Id, key);
+
+    /// <summary>Files removed from the set whose last copy is still kept. Needs the drive, so the index is current.</summary>
+    public List<SnapshotFile> DeletedFiles(BackupSet set)
+    {
+        var setStore = RequireDrive(set).Set(set.Id);
+        SyncIndex(set.Id, setStore);
+        return _index.DeletedFiles(set.Id)
+            .Select(d => new SnapshotFile(d.Key, new ManifestEntry(0, d.Key.Path, d.Hash, d.Size, d.MTimeTicks, 0), ChangeKind.Deleted, d.DeletedAt))
+            .ToList();
+    }
 
     /// <summary>Finds the set and key for a path on the PC (used by the Explorer menu).</summary>
     public static (BackupSet Set, FileKey Key)? Locate(IEnumerable<BackupSet> sets, string fullPath)

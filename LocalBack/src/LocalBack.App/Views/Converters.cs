@@ -8,6 +8,9 @@ public static class Converters
 {
     public static readonly IValueConverter Not = new NotConverter();
 
+    /// <summary>true → Collapsed, false → Visible.</summary>
+    public static readonly IValueConverter NotVis = new NotVisConverter();
+
     /// <summary>Percent (0–100) to a star-sized grid length, for proportional bars.</summary>
     public static readonly IValueConverter Star = new StarConverter();
 
@@ -15,6 +18,13 @@ public static class Converters
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture) => value is bool b ? !b : value;
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => value is bool b ? !b : value;
+    }
+
+    private sealed class NotVisConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
+            value is true ? Visibility.Collapsed : Visibility.Visible;
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
     }
 
     private sealed class StarConverter : IValueConverter
